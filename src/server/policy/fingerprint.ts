@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { AccountSnapshot, IntendedPolicy } from '../../shared/contracts.js';
+import type { AccountSnapshot, IntendedPolicy, RepairPlan } from '../../shared/contracts.js';
 
 /**
  * Stable authorization fingerprint.
@@ -35,4 +35,25 @@ export function authorizationFingerprint(snapshot: AccountSnapshot, policy: Inte
   };
 
   return createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+}
+
+/** Policy-side check requested before calling A's approval function. */
+export function repairStaleReason(
+  plan: RepairPlan,
+  snapshot: AccountSnapshot,
+  policy: IntendedPolicy,
+): string | undefined {
+  if (plan.unsignedTransaction.TransactionType !== 'DepositPreauth') {
+    return 'Stored repair is not a DepositPreauth transaction.';
+  }
+  if (plan.unsignedTransaction.Unauthorize !== plan.affectedAddress) {
+    return 'Stored repair does not target the reviewed address.';
+  }
+  if (plan.unsignedTransaction.Account !== snapshot.treasuryAddress) {
+    return 'Treasury address changed since this plan was created. Rerun checks.';
+  }
+  if (authorizationFingerprint(snapshot, policy) !== plan.snapshotFingerprint) {
+    return 'Authorization-relevant state changed since this plan was created. Rerun checks.';
+  }
+  return undefined;
 }

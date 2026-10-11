@@ -12,9 +12,9 @@ A owns `src/server/ledger/**`. The integration lead owns `src/client/**`, `src/s
 
 ## Ledger adapter
 
-B loads `src/server/ledger/index.ts` at runtime and calls A's actual exports:
+B loads `src/server/ledger/index.ts` at runtime. When the frozen compatibility exports are present (`createDemoEnvironment`, `readSnapshot`, `sendTestPayment`, `removeIndividualApproval`, added on `teammate-a-ledger` `4ff6c2b`), those are the integration path. `removeIndividualApproval` is called only after the API has accepted `approved: true` for the stored public plan. It reuses A's internal preview and approval checks. B does not write a second plan file.
 
-`connectLedger`, `createTestAccounts`, `setupPermissions`, `readPermissions`, `readCredential`, `testPayment`, `customerRefs`, `CUSTOMER_TYPE`, `previewRemoveDirectApproval`, `removeDirectApproval`.
+The original lower-level exports remain a fallback: `connectLedger`, `createTestAccounts`, `setupPermissions`, `readPermissions`, `readCredential`, `testPayment`, `customerRefs`, `CUSTOMER_TYPE`, `previewRemoveDirectApproval`, and `removeDirectApproval`.
 
 Role addresses are `alice` → `validCustomer`, `bob` → `legacyCustomer`, `charlie` → `stranger`, `company` → treasury, `issuer` → issuer. Outcomes are not chosen from those names.
 

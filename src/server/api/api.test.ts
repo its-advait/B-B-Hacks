@@ -3,6 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import test from 'node:test';
 import type { AccountSnapshot, ActorRole, PaymentObservation, PublicSession, RepairPlan } from '../../shared/contracts.js';
+import { deriveIntendedPolicy } from '../policy/evaluate.js';
+import { authorizationFingerprint } from '../policy/fingerprint.js';
 import { createApp } from './createApp.js';
 import { loadLedgerPort } from './ledgerAdapter.js';
 import { LedgerUnavailableError, type LedgerPort } from './ledgerPort.js';
@@ -68,32 +70,32 @@ class ScriptedLedger implements LedgerPort {
         Account: this.snapshot.treasuryAddress,
         Unauthorize: address,
       },
-      snapshotFingerprint: 'ledger-permission-fingerprint',
+      snapshotFingerprint: authorizationFingerprint(this.snapshot, deriveIntendedPolicy(this.snapshot)),
     };
   }
 
-  async executeStoredRepair(_session: unknown, planId: string): Promise<{
+  async executeStoredRepair(_session: unknown, plan: { id: string; affectedAddress: string }): Promise<{
     transactionHash: string;
     resultCode: string;
     validated: true;
   }> {
-    const plan = this.plans.get(planId);
-    if (!plan) {
+    const stored = this.plans.get(plan.id);
+    if (!stored) {
       throw new Error('Invalid plan ID');
     }
-    if (plan.consumed) {
+    if (stored.consumed) {
       throw new Error('Plan already submitted; reconcile its journal receipt, do not reapply');
     }
-    const actor = this.snapshot.actors.find((item) => item.address === plan.address);
+    const actor = this.snapshot.actors.find((item) => item.address === stored.address);
     if (!this.snapshot.depositAuthEnabled || !actor?.individuallyApproved) {
       throw new Error('Authorization state changed; preview and approve a fresh plan');
     }
     this.repairCalls += 1;
-    plan.consumed = true;
+    stored.consumed = true;
     if (this.failRepair) {
       throw new Error('socket timeout after submission seed sEdVL7h30dK1mN2pQ3rS');
     }
-    this.removed.push(plan.address);
+    this.removed.push(stored.address);
     actor.individuallyApproved = false;
     this.payments.legacyCustomer = {
       actor: 'legacyCustomer',
@@ -291,7 +293,7 @@ test('cancel sends no repair, stale plans are rejected, and the reviewed flow ke
     const plan = before.reports[0]?.repairPlan;
     assert.ok(plan);
     assert.equal(before.reports[0]?.rows[1]?.verdict, 'mismatch');
-    assert.equal(plan.snapshotFingerprint, 'ledger-permission-fingerprint');
+    assert.equal(plan.snapshotFingerprint, authorizationFingerprint(ledger.snapshot, deriveIntendedPolicy(ledger.snapshot)));
     assert.equal(before.reports[0]?.rows[1]?.transactionHash, 'HASH_legacy');
 
     const canceled = await request(base, 'POST', `/api/sessions/${sessionId}/repair`, {

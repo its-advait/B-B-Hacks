@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createALedgerPort, type ALedgerModule, type DemoSession } from './aLedger.js';
+import { portFromLedgerModule } from './ledgerAdapter.js';
 import { credentialStatusFromRead, projectPayment, projectStoredRepair, type LedgerReceipt } from './ledgerMap.js';
 
 const accounts = {
@@ -204,8 +205,56 @@ test('adapter reads credentials explicitly, omits legacy and stranger ids, and u
   const plan = await port.previewDirectApprovalRepair(session, accounts.bob);
   assert.equal(plan.id, 'preview-1');
   assert.equal(plan.snapshotFingerprint, 'perm-fp');
-  const executed = await port.executeStoredRepair(session, plan.id);
+  const executed = await port.executeStoredRepair(session, { id: plan.id, affectedAddress: plan.affectedAddress });
   assert.equal(executed.transactionHash, 'REPAIR');
   assert.deepEqual(approval, { approved: true, planId: 'preview-1', approvedBy: 'gatecheck-operator' });
   assert.equal(reads.includes(accounts.bob), true);
+});
+
+test('the loader uses the frozen compatibility exports and does not open a second repair store', async () => {
+  let removed = '';
+  const sessionHandle = { kind: 'opaque' };
+  const mod = {
+    async createDemoEnvironment() {
+      return sessionHandle;
+    },
+    async readSnapshot() {
+      return {
+        network: 'devnet',
+        ledgerIndex: 12,
+        treasuryAddress: 'rCompany',
+        issuerAddress: 'rIssuer',
+        credentialType: 'HEX',
+        depositAuthEnabled: true,
+        trustedCredentialRulePresent: true,
+        capturedAt: '2026-01-01T00:00:00.000Z',
+        actors: [
+          { role: 'validCustomer' as const, address: 'rAlice', credentialStatus: 'valid' as const, individuallyApproved: false },
+          { role: 'legacyCustomer' as const, address: 'rBob', credentialStatus: 'revoked' as const, individuallyApproved: true },
+          { role: 'stranger' as const, address: 'rCharlie', credentialStatus: 'none' as const, individuallyApproved: false },
+        ],
+      };
+    },
+    async sendTestPayment() {
+      throw new Error('not used');
+    },
+    async removeIndividualApproval(_session: unknown, address: string) {
+      removed = address;
+      return { transactionHash: 'WRAP_HASH', resultCode: 'tesSUCCESS', validated: true as const };
+    },
+    previewRemoveDirectApproval() {
+      throw new Error('second preview store');
+    },
+    removeDirectApproval() {
+      throw new Error('bypassed approval wrapper');
+    },
+  };
+  const port = portFromLedgerModule(mod);
+  const session = await port.createDemoEnvironment(() => undefined);
+  const plan = await port.previewDirectApprovalRepair(session, 'rBob');
+  const receipt = await port.executeStoredRepair(session, { id: plan.id, affectedAddress: plan.affectedAddress });
+  assert.equal(session, sessionHandle);
+  assert.equal(removed, 'rBob');
+  assert.equal(receipt.transactionHash, 'WRAP_HASH');
+  assert.equal(plan.unsignedTransaction.Unauthorize, 'rBob');
 });

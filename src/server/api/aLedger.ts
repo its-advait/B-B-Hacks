@@ -210,10 +210,10 @@ export function createALedgerPort(mod: ALedgerModule): LedgerPort {
       return projectStoredRepair(preview);
     },
 
-    async executeStoredRepair(session, planId): Promise<RepairExecution> {
+    async executeStoredRepair(session, plan): Promise<RepairExecution> {
       asDemoSession(session);
-      const approval: ARepairApproval = { approved: true, planId, approvedBy: REPAIR_APPROVER };
-      const result = await mod.removeDirectApproval(planId, approval);
+      const approval: ARepairApproval = { approved: true, planId: plan.id, approvedBy: REPAIR_APPROVER };
+      const result = await mod.removeDirectApproval(plan.id, approval);
       const receipt = result.receipt;
       if (receipt.resultCode === 'INCONCLUSIVE' || receipt.successful === null || receipt.validated !== true) {
         throw new Error(
