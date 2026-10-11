@@ -233,19 +233,23 @@ export function Dashboard({
 
   return (
     <main data-mode={fixtureOn ? 'fixture' : 'real'}>
-      <p className="testnet-label">
-        {fixtureOn
-          ? 'Development fixture / sample data'
-          : evidenceNetwork === 'devnet'
-            ? 'Devnet / fake funds'
-            : evidenceNetwork === 'testnet'
-              ? 'Testnet / fake funds'
-              : 'Fake funds / network not loaded'}
-      </p>
-      <h1>GateCheck</h1>
-      <p className="lede">
-        Compare the intended credential rule with {networkTitle} payment results, then review one direct-approval repair.
-      </p>
+      <header className="page-header">
+        <p className="testnet-label">
+          {fixtureOn
+            ? 'Development fixture / sample data'
+            : evidenceNetwork === 'devnet'
+              ? 'Devnet / fake funds'
+              : evidenceNetwork === 'testnet'
+                ? 'Testnet / fake funds'
+                : 'Fake funds / network not loaded'}
+        </p>
+        <div>
+          <h1>GateCheck</h1>
+          <p className="lede">
+            Compare the intended credential rule with {networkTitle} payment results, then review one direct-approval repair.
+          </p>
+        </div>
+      </header>
 
       {showFixtureSwitch ? (
         <fieldset className="fixture-controls">
@@ -408,8 +412,14 @@ export function Dashboard({
                   <td>
                     <AddressLine value={actor.address} label={`${roleLabels[actor.role]} address`} />
                   </td>
-                  <td>{actor.credentialStatus}</td>
-                  <td>{actor.individuallyApproved ? 'Yes' : 'No'}</td>
+                  <td>
+                    <span className={`badge badge-${actor.credentialStatus}`}>{actor.credentialStatus}</span>
+                  </td>
+                  <td>
+                    <span className={`badge ${actor.individuallyApproved ? 'badge-yes' : 'badge-no'}`}>
+                      {actor.individuallyApproved ? 'Yes' : 'No'}
+                    </span>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -503,7 +513,7 @@ export function Dashboard({
                 <AddressLine value={selected.snapshot.issuerAddress} label="report issuer address" />
               </dd>
             </dl>
-            <table>
+            <table className="results">
               <caption>Expected policy outcome versus observed ledger outcome.</caption>
               <thead>
                 <tr>
@@ -525,9 +535,17 @@ export function Dashboard({
                   return (
                     <tr key={`${selected.id}-${row.actor}`} className={`verdict-${row.verdict}`}>
                       <td>{roleLabels[row.actor]}</td>
-                      <td>{row.expected === 'allowed' ? 'Allowed' : 'Blocked'}</td>
-                      <td>{outcomeLabels[row.observed]}</td>
-                      <td>{verdictLabels[row.verdict]}</td>
+                      <td>
+                        <span className={`badge badge-${row.expected}`}>
+                          {row.expected === 'allowed' ? 'Allowed' : 'Blocked'}
+                        </span>
+                      </td>
+                      <td>
+                        <span className={`badge badge-${row.observed}`}>{outcomeLabels[row.observed]}</span>
+                      </td>
+                      <td>
+                        <span className={`badge badge-${row.verdict}`}>{verdictLabels[row.verdict]}</span>
+                      </td>
                       <td>{row.validated ? 'Yes' : 'No'}</td>
                       <td>{row.resultCode ?? 'None'}</td>
                       <td>
