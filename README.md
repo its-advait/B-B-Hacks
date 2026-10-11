@@ -62,6 +62,6 @@ Use [docs/HANDOFF.md](docs/HANDOFF.md) and [src/server/ledger/types.ts](src/serv
 - [Payment and CredentialIDs](https://xrpl.org/docs/references/protocol/transactions/types/payment)
 - [Reliable submission](https://xrpl.org/docs/concepts/transactions/reliable-transaction-submission)
 
-## GateCheck versus [removed term]
+## Integration with B
 
-[removed term] turns invoices into evidence for lending and tracks repayment/default economics. GateCheck tests payment access: **policy → real adversarial payment → counterexample → reviewed repair → regression test**. It has no invoices, lending vaults, underwriting, or loan accounting. Its narrow native-authorization interaction is easier to prove live in a short hackathon demonstration.
+The four frozen ledger exports are implemented in `src/server/ledger/index.ts`: `createDemoEnvironment`, `readSnapshot`, `sendTestPayment`, and `removeIndividualApproval`. See [docs/COMPATIBILITY-HANDOFF.md](docs/COMPATIBILITY-HANDOFF.md) for selected-file integration, credential guarantees, and the explicit server-side approval boundary.

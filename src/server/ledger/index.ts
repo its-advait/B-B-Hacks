@@ -1,3 +1,5 @@
+export { createDemoEnvironment, readSnapshot, sendTestPayment, removeIndividualApproval } from './compatibility.js'
+export type { LedgerSession } from './compatibility.js'
 export { connectLedger, disconnectLedger } from './client.js'
 export { createTestAccounts } from './accounts.js'
 export { CUSTOMER_TYPE, issueCredential, acceptCredential, revokeCredential, readCredential } from './credentials.js'
