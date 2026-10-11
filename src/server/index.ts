@@ -1,13 +1,11 @@
 import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createApp } from './api/createApp.js';
+import { loadLedgerPort } from './api/ledgerAdapter.js';
 
 const port = Number(process.env.PORT ?? 3001);
-const app = express();
-
-app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, mode: 'testnet' });
-});
+const app = createApp({ resolveLedger: loadLedgerPort });
 
 const serverDir = path.dirname(fileURLToPath(import.meta.url));
 const runningFromBuild = path.basename(path.dirname(serverDir)) === 'dist';
