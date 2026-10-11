@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { AccountSnapshot, Actor, IntendedPolicy, PaymentObservation } from '../../shared/contracts.js';
-import { deriveIntendedPolicy, expectedOutcome } from './evaluate.js';
+import { deriveIntendedPolicy, evaluateIntended, expectedOutcome, PolicyInputError } from './evaluate.js';
 import { authorizationFingerprint } from './fingerprint.js';
 import { buildReport, classifyObservation } from './report.js';
 
@@ -242,4 +242,127 @@ test('fingerprint ignores ledger movement and changes when authorization or poli
   assert.notEqual(authorizationFingerprint(approvalRemoved, policy), original);
   assert.notEqual(authorizationFingerprint(state, { ...policy, individualExceptions: ['rLegacy'] }), original);
   assert.notEqual(authorizationFingerprint(snapshot({ depositAuthEnabled: false }), policy), original);
+  assert.notEqual(authorizationFingerprint(snapshot({ trustedCredentialRulePresent: false }), policy), original);
+  assert.notEqual(authorizationFingerprint(snapshot({ treasuryAddress: 'rOtherTreasury' }), policy), original);
+  assert.equal(
+    authorizationFingerprint(snapshot({ credentialType: 'abcd' }), { ...policy, credentialType: 'ABCD' }),
+    authorizationFingerprint(snapshot({ credentialType: 'ABCD' }), { ...policy, credentialType: 'abcd' }),
+  );
+});
+
+test('intended decisions follow credential status, exceptions, and issuer/type only', () => {
+  const state = snapshot();
+  const valid = state.actors[0];
+  const legacy = state.actors[1];
+  const stranger = state.actors[2];
+  assert.ok(valid && legacy && stranger);
+
+  const allowed = evaluateIntended(valid, policy, state);
+  assert.equal(allowed.expected, 'allowed');
+  assert.match(allowed.reason, /valid/);
+
+  const revokedApproved = evaluateIntended({ ...legacy, individuallyApproved: true }, policy, state);
+  const revokedNotApproved = evaluateIntended({ ...legacy, individuallyApproved: false }, policy, state);
+  assert.equal(revokedApproved.expected, 'blocked');
+  assert.deepEqual(revokedApproved, revokedNotApproved);
+
+  assert.equal(evaluateIntended(stranger, policy, state).expected, 'blocked');
+  assert.match(evaluateIntended(stranger, policy, state).reason, /No credential/);
+
+  const excepted = evaluateIntended(legacy, { ...policy, individualExceptions: [legacy.address] }, state);
+  assert.equal(excepted.expected, 'allowed');
+  assert.match(excepted.reason, /explicit intended exception/);
+  assert.equal(evaluateIntended(legacy, { ...policy, individualExceptions: [legacy.address.toLowerCase()] }, state).expected, 'blocked');
+
+  const depositOff = snapshot({ depositAuthEnabled: false, trustedCredentialRulePresent: false });
+  assert.deepEqual(evaluateIntended(valid, policy, depositOff), evaluateIntended(valid, policy, state));
+  assert.deepEqual(evaluateIntended(legacy, policy, depositOff), evaluateIntended(legacy, policy, state));
+
+  const wrongIssuer = evaluateIntended(valid, policy, snapshot({ issuerAddress: 'rOtherIssuer' }));
+  assert.equal(wrongIssuer.expected, 'blocked');
+  assert.match(wrongIssuer.reason, /does not match intended policy/);
+  assert.equal(evaluateIntended(valid, { ...policy, credentialType: 'Customer' }, state).expected, 'blocked');
+
+  const hexSnapshot = snapshot({ credentialType: 'ab' });
+  assert.equal(evaluateIntended(valid, { ...policy, credentialType: 'AB' }, hexSnapshot).expected, 'allowed');
+});
+
+test('malformed policy input is rejected and evaluation does not mutate its input', () => {
+  const state = snapshot();
+  const valid = state.actors[0];
+  assert.ok(valid);
+  const beforeState = structuredClone(state);
+  const beforePolicy = structuredClone(policy);
+  evaluateIntended(valid, policy, state);
+  assert.deepEqual(state, beforeState);
+  assert.deepEqual(policy, beforePolicy);
+
+  assert.throws(() => evaluateIntended({ ...valid, credentialStatus: 'expired' as 'valid' }, policy, state), PolicyInputError);
+  assert.throws(() => evaluateIntended(valid, { ...policy, requireCurrentAcceptedCredential: false as true }, state), PolicyInputError);
+  assert.throws(() => evaluateIntended(valid, policy, snapshot({ issuerAddress: '' })), PolicyInputError);
+});
+
+test('missing evidence stays inconclusive and a report freezes its inputs', () => {
+  const state = snapshot();
+  const observations = [
+    observation('validCustomer', 'allowed', 'tesSUCCESS'),
+    observation('legacyCustomer', 'allowed', 'tesSUCCESS', { transactionHash: undefined }),
+    observation('stranger', 'blocked', 'tecNO_PERMISSION'),
+  ];
+  const missing = classifyObservation(observations[1]!);
+  assert.equal(missing.observed, 'inconclusive');
+
+  const report = buildReport({
+    phase: 'before',
+    snapshot: state,
+    policy,
+    observations,
+    completedAt: '2026-01-01T00:02:00.000Z',
+    planId: 'plan-frozen',
+  });
+  state.actors[1]!.individuallyApproved = false;
+  state.ledgerIndex = 5;
+  observations[1]!.resultCode = 'tecUNFUNDED_PAYMENT';
+  assert.equal(report.snapshot.actors[1]?.individuallyApproved, true);
+  assert.equal(report.snapshot.ledgerIndex, 100);
+  assert.equal(report.rows[1]?.verdict, 'inconclusive');
+  assert.equal(report.rows[1]?.resultCode, 'tesSUCCESS');
+  assert.equal(report.repairPlan, undefined);
+
+  assert.throws(() => buildReport({
+    phase: 'before',
+    snapshot: snapshot({ actors: state.actors.slice(0, 2) }),
+    policy,
+    observations,
+  }), PolicyInputError);
+  assert.throws(() => buildReport({
+    phase: 'before',
+    snapshot: snapshot(),
+    policy,
+    observations: [observation('legacyCustomer', 'allowed', 'tesSUCCESS'), observation('legacyCustomer', 'blocked', 'tecNO_PERMISSION')],
+  }), PolicyInputError);
+});
+
+test('one repair plan is stored when several direct approvals conflict', () => {
+  const state = snapshot({
+    actors: [
+      actor({ role: 'validCustomer', address: 'rValid', credentialStatus: 'valid' }),
+      actor({ role: 'legacyCustomer', address: 'rLegacy', credentialStatus: 'revoked', individuallyApproved: true }),
+      actor({ role: 'stranger', address: 'rStranger', credentialStatus: 'none', individuallyApproved: true }),
+    ],
+  });
+  const report = buildReport({
+    phase: 'before',
+    snapshot: state,
+    policy,
+    observations: [
+      observation('validCustomer', 'allowed', 'tesSUCCESS'),
+      observation('legacyCustomer', 'allowed', 'tesSUCCESS'),
+      observation('stranger', 'allowed', 'tesSUCCESS'),
+    ],
+    planId: 'plan-one',
+  });
+  assert.equal(report.repairPlan?.affectedAddress, 'rLegacy');
+  assert.match(report.repairPlan?.description ?? '', /one plan/);
+  assert.match(report.rows[2]?.explanation ?? '', /only one repair plan/);
 });

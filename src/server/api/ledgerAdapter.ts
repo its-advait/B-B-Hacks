@@ -28,6 +28,19 @@ export function portFromLedgerModule(mod: object): LedgerPort {
   return createALedgerPort(mod as ALedgerModule);
 }
 
+/** Calls disconnectLedger only when A's module actually exports it. */
+export async function disconnectLoadedLedger(): Promise<void> {
+  try {
+    const mod = await importLedgerModule();
+    const disconnect = (mod as { disconnectLedger?: unknown }).disconnectLedger;
+    if (typeof disconnect === 'function') {
+      await disconnect();
+    }
+  } catch {
+    // A missing ledger module means there is no client to close.
+  }
+}
+
 export async function loadLedgerPort(): Promise<LedgerPort> {
   try {
     return portFromLedgerModule(await importLedgerModule());

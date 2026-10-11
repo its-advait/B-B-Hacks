@@ -1,11 +1,18 @@
 import { createHash } from 'node:crypto';
 import type { AccountSnapshot, IntendedPolicy, RepairPlan } from '../../shared/contracts.js';
+import { canonicalCredentialType } from './evaluate.js';
 
 /**
- * Stable authorization fingerprint.
- * Includes DepositAuth, direct preauthorizations, trusted issuer/type,
- * credential validity, and the intended policy fields that change an outcome.
- * Excludes ledger index, snapshot time, balances, sequence, and fees.
+ * Canonical fingerprint of the shared snapshot's represented permission scope
+ * plus the intended policy. It is not a hash of every ledger object.
+ *
+ * Included: network, treasury, issuer, credential type, DepositAuth,
+ * trusted-credential-rule presence, each actor's address, credential status,
+ * and direct approval, and the intended issuer, type, and exceptions.
+ * Hex credential types are canonicalized; human-readable names are not.
+ *
+ * Excluded: ledgerIndex, capturedAt, balances, fees, transaction sequence,
+ * and other incidental values. Advancing a ledger alone does not change it.
  */
 export function authorizationFingerprint(snapshot: AccountSnapshot, policy: IntendedPolicy): string {
   const actors = [...snapshot.actors].sort((left, right) => {
@@ -14,22 +21,20 @@ export function authorizationFingerprint(snapshot: AccountSnapshot, policy: Inte
   });
 
   const payload = {
-    credentialType: snapshot.credentialType,
-    credentials: actors.map((actor) => ({
+    actors: actors.map((actor) => ({
       address: actor.address,
       credentialStatus: actor.credentialStatus,
+      individuallyApproved: actor.individuallyApproved,
       role: actor.role,
     })),
+    credentialType: canonicalCredentialType(snapshot.credentialType),
     depositAuthEnabled: snapshot.depositAuthEnabled,
     individualExceptions: [...policy.individualExceptions].sort(),
     issuerAddress: snapshot.issuerAddress,
     network: snapshot.network,
-    policyCredentialType: policy.credentialType,
-    preauthorizations: actors.map((actor) => ({
-      address: actor.address,
-      individuallyApproved: actor.individuallyApproved,
-    })),
+    policyCredentialType: canonicalCredentialType(policy.credentialType),
     requireCurrentAcceptedCredential: policy.requireCurrentAcceptedCredential,
+    treasuryAddress: snapshot.treasuryAddress,
     trustedCredentialRulePresent: snapshot.trustedCredentialRulePresent,
     trustedIssuer: policy.trustedIssuer,
   };
@@ -38,11 +43,7 @@ export function authorizationFingerprint(snapshot: AccountSnapshot, policy: Inte
 }
 
 /** Policy-side check requested before calling A's approval function. */
-export function repairStaleReason(
-  plan: RepairPlan,
-  snapshot: AccountSnapshot,
-  policy: IntendedPolicy,
-): string | undefined {
+export function repairStaleReason(plan: RepairPlan, snapshot: AccountSnapshot, policy: IntendedPolicy): string | undefined {
   if (plan.unsignedTransaction.TransactionType !== 'DepositPreauth') {
     return 'Stored repair is not a DepositPreauth transaction.';
   }
