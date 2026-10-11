@@ -168,6 +168,12 @@ th {
   background: #e7f0e8;
 }
 
+.inconclusive {
+  padding: 0.8rem 1rem;
+  background: #f4ecd4;
+  border-left: 4px solid #8a6a12;
+}
+
 .mismatch {
   padding: 0.8rem 1rem;
   background: #f8e4d8;

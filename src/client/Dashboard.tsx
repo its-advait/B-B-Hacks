@@ -15,6 +15,16 @@ interface DashboardProps {
   onFixtureOnChange: (on: boolean) => void;
   onScenarioChange: (scenario: FixtureScenario) => void;
   session: PublicSession | null;
+  sessionNotice: string | null;
+  setupPending: boolean;
+  checksPending: boolean;
+  repairPending: boolean;
+  stalePlanId: string | null;
+  sessionUnavailable: boolean;
+  onCreateEnvironment: () => void;
+  onRunBeforeChecks: () => void;
+  onRunAfterChecks: () => void;
+  onSubmitRepair: (planId: string) => void;
 }
 
 const roleLabels: Record<ActorRole, string> = {
@@ -28,6 +38,12 @@ const outcomeLabels: Record<Outcome, string> = {
   blocked: 'Blocked',
   inconclusive: 'Inconclusive',
 };
+
+const verdictLabels = {
+  match: 'Match',
+  mismatch: 'Mismatch',
+  inconclusive: 'Inconclusive',
+} as const;
 
 const scenarios: { value: FixtureScenario; label: string }[] = [
   { value: 'empty', label: 'Empty' },
@@ -107,7 +123,7 @@ function downloadReport(report: Report) {
   link.href = url;
   link.download = `gatecheck-${report.phase}-${report.id}.json`;
   link.click();
-  URL.revokeObjectURL(url);
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 export function Dashboard({
@@ -118,6 +134,16 @@ export function Dashboard({
   onFixtureOnChange,
   onScenarioChange,
   session,
+  sessionNotice,
+  setupPending,
+  checksPending,
+  repairPending,
+  stalePlanId,
+  sessionUnavailable,
+  onCreateEnvironment,
+  onRunBeforeChecks,
+  onRunAfterChecks,
+  onSubmitRepair,
 }: DashboardProps) {
   const [phase, setPhase] = useState<Phase>('before');
   const [setupApproved, setSetupApproved] = useState(false);
@@ -126,16 +152,67 @@ export function Dashboard({
   const [actionNote, setActionNote] = useState<string | null>(null);
 
   const reports = session?.reports ?? [];
-  const selected = reports.find((report) => report.phase === phase) ?? null;
-  const beforeReport = reports.find((report) => report.phase === 'before');
-  const afterReport = reports.find((report) => report.phase === 'after');
+  const selected = [...reports].reverse().find((report) => report.phase === phase) ?? null;
+  const beforeReport = [...reports].reverse().find((report) => report.phase === 'before');
+  const afterReport = [...reports].reverse().find((report) => report.phase === 'after');
   const plan = selected?.repairPlan ?? beforeReport?.repairPlan;
   const snapshot = session?.snapshot;
-  const policy = selected?.policy ?? beforeReport?.policy ?? afterReport?.policy;
+  const policy =
+    selected?.policy ??
+    beforeReport?.policy ??
+    afterReport?.policy ??
+    (snapshot
+      ? {
+          trustedIssuer: snapshot.issuerAddress,
+          credentialType: snapshot.credentialType,
+          requireCurrentAcceptedCredential: true as const,
+          individualExceptions: [],
+        }
+      : undefined);
   const busy = session?.status === 'settingUp' || session?.status === 'checking' || session?.status === 'repairing';
+  const mutationsHeld = setupPending || checksPending || repairPending || busy;
   const previewActions = fixtureOn && !busy;
+  const evidenceNetwork =
+    session?.snapshot?.network === 'devnet' || session?.snapshot?.network === 'testnet'
+      ? session.snapshot.network
+      : session?.network === 'devnet' || session?.network === 'testnet'
+        ? session.network
+        : undefined;
+  const networkTitle = fixtureOn
+    ? 'sample'
+    : evidenceNetwork === 'devnet'
+      ? 'Devnet'
+      : evidenceNetwork === 'testnet'
+        ? 'Testnet'
+        : 'ledger';
+  const readyForChecks =
+    !fixtureOn && !sessionUnavailable && session?.status === 'ready' && Boolean(session.snapshot);
   const receipt = session?.repairReceipt;
+  const repairSucceeded = receipt?.validated === true && receipt.resultCode === 'tesSUCCESS';
+  const canRunBefore = readyForChecks && checksApproved && !mutationsHeld && !repairSucceeded;
+  const planSource = [...reports].reverse().find((report) => report.repairPlan?.id === plan?.id) ?? null;
+  const planNetwork = planSource?.snapshot.network ?? snapshot?.network ?? evidenceNetwork ?? 'Unknown';
+  const treasuryAddress = planSource?.snapshot.treasuryAddress ?? snapshot?.treasuryAddress ?? plan?.unsignedTransaction.Account;
+  const canApproveRepair =
+    !fixtureOn &&
+    !sessionUnavailable &&
+    session?.status === 'ready' &&
+    Boolean(plan) &&
+    repairApproved &&
+    !mutationsHeld &&
+    !repairSucceeded &&
+    stalePlanId !== plan?.id;
+  const canRunAfter =
+    !fixtureOn &&
+    !sessionUnavailable &&
+    session?.status === 'ready' &&
+    repairSucceeded &&
+    checksApproved &&
+    !mutationsHeld &&
+    !afterReport;
   const mismatchRows = selected?.rows.filter((row) => row.verdict === 'mismatch') ?? [];
+  const inconclusiveRows =
+    selected?.rows.filter((row) => row.verdict === 'inconclusive' || row.observed === 'inconclusive') ?? [];
 
   useEffect(() => {
     setPhase('before');
@@ -143,16 +220,30 @@ export function Dashboard({
     setRepairApproved(false);
   }, [session?.id]);
 
+  useEffect(() => {
+    if (afterReport?.id) {
+      setPhase('after');
+    }
+  }, [afterReport?.id]);
+
   function previewOnly(action: string) {
     setActionNote(`${action} was not sent. This development fixture does not call the session API.`);
   }
 
   return (
     <main data-mode={fixtureOn ? 'fixture' : 'real'}>
-      <p className="testnet-label">Testnet / fake funds</p>
+      <p className="testnet-label">
+        {fixtureOn
+          ? 'Development fixture / sample data'
+          : evidenceNetwork === 'devnet'
+            ? 'Devnet / fake funds'
+            : evidenceNetwork === 'testnet'
+              ? 'Testnet / fake funds'
+              : 'Fake funds / network not loaded'}
+      </p>
       <h1>GateCheck</h1>
       <p className="lede">
-        Compare the intended credential rule with testnet payment results, then review one direct-approval repair.
+        Compare the intended credential rule with {networkTitle} payment results, then review one direct-approval repair.
       </p>
 
       {showFixtureSwitch ? (
@@ -181,7 +272,7 @@ export function Dashboard({
               </select>
             </label>
           ) : (
-            <p>The switch is off. The dashboard below shows unavailable data, not sample results.</p>
+            <p>The switch is off. Account data comes from the session API, and stays empty until you create an environment.</p>
           )}
         </fieldset>
       ) : null}
@@ -195,10 +286,17 @@ export function Dashboard({
       <section aria-labelledby="connection-heading">
         <h2 id="connection-heading">Connection</h2>
         {health.status === 'loading' ? <p role="status">Checking API health…</p> : null}
-        {health.status === 'success' ? <p role="status">API connection: healthy {health.body}</p> : null}
+        {health.status === 'success' ? <p role="status">API connection: healthy.</p> : null}
         {health.status === 'error' ? <p role="alert">API connection failed: {health.message}</p> : null}
-        {session ? <p role="status">Progress: {session.progress}</p> : <p>No session is loaded.</p>}
+        {session ? (
+          <p role="status">
+            Session {session.id}. Status {session.status}. Progress: {session.progress}
+          </p>
+        ) : (
+          <p>No session is loaded.</p>
+        )}
         {session?.error ? <p role="alert">{session.error}</p> : null}
+        {sessionNotice ? <p role="alert">{sessionNotice}</p> : null}
         {actionNote ? <p role="status">{actionNote}</p> : null}
       </section>
 
@@ -215,15 +313,21 @@ export function Dashboard({
         </label>
         <button
           type="button"
-          disabled={!previewActions || !setupApproved}
-          onClick={() => previewOnly('Create test environment')}
+          disabled={fixtureOn ? !previewActions || !setupApproved : mutationsHeld || !setupApproved}
+          onClick={() => {
+            if (fixtureOn) {
+              previewOnly('Create test environment');
+              return;
+            }
+            onCreateEnvironment();
+          }}
         >
           Create test environment
         </button>
         <p id="setup-hint">
           {fixtureOn
             ? 'Preview only. Turning this on does not create wallets or submit transactions.'
-            : 'Waiting for the session API. This action stays disabled.'}
+            : 'Setup starts only after you check the box and click. Opening or refreshing this page does not submit transactions.'}
         </p>
       </section>
 
@@ -342,29 +446,62 @@ export function Dashboard({
         <div className="actions">
           <button
             type="button"
-            disabled={!previewActions || !checksApproved}
-            onClick={() => previewOnly('Run checks')}
+            disabled={fixtureOn ? !previewActions || !checksApproved : !canRunBefore}
+            onClick={() => {
+              if (fixtureOn) {
+                previewOnly('Run checks');
+                return;
+              }
+              setActionNote(null);
+              onRunBeforeChecks();
+            }}
           >
             Run checks
           </button>
           <button
             type="button"
-            disabled={!previewActions || !checksApproved || !beforeReport}
-            onClick={() => previewOnly('Rerun checks')}
+            disabled={fixtureOn ? !previewActions || !checksApproved || !beforeReport : !canRunAfter}
+            onClick={() => {
+              if (fixtureOn) {
+                previewOnly('Run after checks');
+                return;
+              }
+              setActionNote(null);
+              onRunAfterChecks();
+            }}
           >
-            Rerun checks
+            Run after checks
           </button>
         </div>
         <p>
           {fixtureOn
             ? 'Preview only. These buttons do not submit payments.'
-            : 'Waiting for the session API. Check actions stay disabled.'}
+            : 'Run checks submits the before suite. Run after checks submits the after suite only after a validated tesSUCCESS repair receipt, and only when you check the box and click. Neither runs on its own.'}
         </p>
+        {session?.status === 'checking' && !selected ? (
+          <p role="status">Checks were accepted and are still running. This report appears when the session includes it.</p>
+        ) : null}
         {selected ? (
           <>
             <p>
               {selected.phase === 'before' ? 'Before' : 'After'} report {selected.id}, completed {selected.completedAt}.
             </p>
+            <dl className="facts">
+              <dt>Report network</dt>
+              <dd>{selected.snapshot.network}</dd>
+              <dt>Ledger index</dt>
+              <dd>{selected.snapshot.ledgerIndex}</dd>
+              <dt>Snapshot captured</dt>
+              <dd>{selected.snapshot.capturedAt}</dd>
+              <dt>Treasury</dt>
+              <dd>
+                <AddressLine value={selected.snapshot.treasuryAddress} label="report treasury address" />
+              </dd>
+              <dt>Issuer</dt>
+              <dd>
+                <AddressLine value={selected.snapshot.issuerAddress} label="report issuer address" />
+              </dd>
+            </dl>
             <table>
               <caption>Expected policy outcome versus observed ledger outcome.</caption>
               <thead>
@@ -389,7 +526,7 @@ export function Dashboard({
                       <td>{roleLabels[row.actor]}</td>
                       <td>{row.expected === 'allowed' ? 'Allowed' : 'Blocked'}</td>
                       <td>{outcomeLabels[row.observed]}</td>
-                      <td>{row.verdict}</td>
+                      <td>{verdictLabels[row.verdict]}</td>
                       <td>{row.validated ? 'Yes' : 'No'}</td>
                       <td>{row.resultCode ?? 'None'}</td>
                       <td>
@@ -415,6 +552,7 @@ export function Dashboard({
             {mismatchRows.length > 0 ? (
               <div className="mismatch" role="status">
                 <h3>Mismatch</h3>
+                <p>The intended policy differs from the ledger configuration. These explanations come from the report.</p>
                 {mismatchRows.map((row) => (
                   <p key={row.actor}>{row.explanation}</p>
                 ))}
@@ -422,6 +560,18 @@ export function Dashboard({
             ) : (
               <p>No mismatch in this report.</p>
             )}
+            {inconclusiveRows.length > 0 ? (
+              <div className="inconclusive" role="status">
+                <h3>Inconclusive</h3>
+                <p>These rows are inconclusive. They are not treated as allowed or blocked.</p>
+                {inconclusiveRows.map((row) => (
+                  <p key={`${row.actor}-inconclusive`}>
+                    {roleLabels[row.actor]}: {row.explanation}
+                    {row.error ? ` ${row.error}` : ''}
+                  </p>
+                ))}
+              </div>
+            ) : null}
             <h3>Row notes</h3>
             <ul>
               {selected.rows.map((row) => (
@@ -449,9 +599,18 @@ export function Dashboard({
         {plan ? (
           <>
             <p>{plan.description}</p>
+            <p>Session network: {planNetwork}. That field is the ledger network. The description above is the stored plan text.</p>
             <dl className="facts">
-              <dt>Network</dt>
-              <dd>{snapshot?.network ?? session?.network ?? 'Unknown'}</dd>
+              <dt>Plan id</dt>
+              <dd>
+                <code>{plan.id}</code>
+              </dd>
+              <dt>Session network</dt>
+              <dd>{planNetwork}</dd>
+              <dt>Treasury</dt>
+              <dd>
+                <AddressLine value={treasuryAddress ?? 'Unknown'} label="treasury address" />
+              </dd>
               <dt>Affected address</dt>
               <dd>
                 <AddressLine value={plan.affectedAddress} label="affected address" />
@@ -474,43 +633,77 @@ export function Dashboard({
                 checked={repairApproved}
                 onChange={(event) => setRepairApproved(event.target.checked)}
               />
-              I approve this testnet configuration change for the affected address
+              I approve this {fixtureOn ? 'sample' : networkTitle} configuration change for the affected address
             </label>
             <div className="actions">
               <button
                 type="button"
-                disabled={!previewActions || !repairApproved || Boolean(receipt)}
-                onClick={() => previewOnly('Repair approval')}
+                disabled={fixtureOn ? !previewActions || !repairApproved || repairSucceeded : !canApproveRepair}
+                onClick={() => {
+                  if (fixtureOn) {
+                    previewOnly('Repair approval');
+                    return;
+                  }
+                  setActionNote(null);
+                  onSubmitRepair(plan.id);
+                }}
               >
                 Approve repair
               </button>
               <button
                 type="button"
-                disabled={!previewActions || Boolean(receipt)}
-                onClick={() => previewOnly('Repair cancel')}
+                disabled={fixtureOn ? !previewActions || repairSucceeded : mutationsHeld || repairSucceeded}
+                onClick={() => {
+                  if (fixtureOn) {
+                    previewOnly('Repair cancel');
+                    return;
+                  }
+                  setRepairApproved(false);
+                  setActionNote('Cancel was not sent. No repair request was made.');
+                }}
               >
                 Cancel
               </button>
             </div>
-            <p>Cancel sends no repair request. Approve does not submit a transaction from this layout preview.</p>
+            <p>
+              {fixtureOn
+                ? 'Cancel sends no repair request. Approve does not submit a transaction from this layout preview.'
+                : stalePlanId === plan.id
+                  ? 'This stored plan was rejected as stale. Approve stays disabled. Rerun before checks only if you want a new plan.'
+                  : 'Cancel sends no repair request. Approve submits this stored plan only after you check the box and click. A 202 response is not success.'}
+            </p>
           </>
         ) : (
           <p>No repair is proposed. A repair appears only when a validated allowed payment contradicts an intended block.</p>
+        )}
+        {repairSucceeded ? (
+          <p role="status">Repair succeeded. The backend returned a validated tesSUCCESS receipt.</p>
+        ) : session?.status === 'repairing' ? (
+          <p role="status">Repair was accepted and is still running. Success waits for a validated tesSUCCESS receipt.</p>
+        ) : receipt ? (
+          <p role="alert">A repair receipt is present, but it is not a validated tesSUCCESS result.</p>
+        ) : (
+          <p>No validated repair receipt.</p>
         )}
         {receipt ? (
           <dl className="facts">
             <dt>Repair receipt</dt>
             <dd>
-              <AddressLine value={receipt.transactionHash} label="repair transaction hash" />
+              <span className="address">
+                {fixtureOn || (planNetwork !== 'devnet' && planNetwork !== 'testnet') ? (
+                  <code>{receipt.transactionHash}</code>
+                ) : (
+                  <a href={explorerUrl(planNetwork, receipt.transactionHash) ?? undefined}>{receipt.transactionHash}</a>
+                )}
+                <CopyButton value={receipt.transactionHash} label="repair transaction hash" />
+              </span>
             </dd>
             <dt>Result code</dt>
             <dd>{receipt.resultCode}</dd>
             <dt>Validated</dt>
             <dd>{receipt.validated ? 'Yes' : 'No'}</dd>
           </dl>
-        ) : (
-          <p>No repair receipt.</p>
-        )}
+        ) : null}
       </section>
     </main>
   );
