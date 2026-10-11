@@ -15,7 +15,7 @@ export interface LedgerPort {
   readSnapshot(session: unknown): Promise<AccountSnapshot>;
   sendTestPayment(session: unknown, actor: ActorRole): Promise<PaymentObservation>;
   previewDirectApprovalRepair(session: unknown, address: string): Promise<RepairPlan>;
-  executeStoredRepair(session: unknown, planId: string): Promise<RepairExecution>;
+  executeStoredRepair(session: unknown, plan: { id: string; affectedAddress: string }): Promise<RepairExecution>;
 }
 
 export class LedgerUnavailableError extends Error {

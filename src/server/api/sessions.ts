@@ -5,6 +5,7 @@ import type { LedgerPort } from './ledgerPort.js';
 import { redactError, redactSecrets } from './redact.js';
 import { deriveIntendedPolicy } from '../policy/evaluate.js';
 import { isStaleRepairError } from './ledgerMap.js';
+import { repairStaleReason } from '../policy/fingerprint.js';
 import { buildReport, CHECK_ACTORS } from '../policy/report.js';
 
 interface PrivateSession {
@@ -209,7 +210,16 @@ export function createSessionService(resolveLedger: () => Promise<LedgerPort>): 
     session.public.progress = `Submitting reviewed DepositPreauth Unauthorize for ${plan.affectedAddress}`;
     try {
       const port = await resolveLedger();
-      const receipt = await port.executeStoredRepair(session.ledger, plan.id);
+      const fresh = await port.readSnapshot(session.ledger);
+      const stale = session.policy ? repairStaleReason(plan, fresh, session.policy) : 'Intended policy is missing.';
+      if (stale) {
+        session.public.snapshot = structuredClone(fresh);
+        throw new ApiError(409, 'stale_plan', stale);
+      }
+      const receipt = await port.executeStoredRepair(session.ledger, {
+        id: plan.id,
+        affectedAddress: plan.affectedAddress,
+      });
       session.consumedPlanIds.add(plan.id);
       session.activePlan = null;
       session.public.repairReceipt = receipt;
@@ -230,6 +240,12 @@ export function createSessionService(resolveLedger: () => Promise<LedgerPort>): 
     } catch (error) {
       session.consumedPlanIds.add(plan.id);
       session.activePlan = null;
+      if (error instanceof ApiError) {
+        session.public.status = 'ready';
+        session.public.error = undefined;
+        session.public.progress = error.message;
+        throw error;
+      }
       if (isStaleRepairError(error)) {
         session.public.status = 'ready';
         session.public.error = undefined;
