@@ -1,0 +1,54 @@
+Subject: GateCheck ledger — compatibility wrapper pushed (commit 4ff6c2b)
+
+Commit: 4ff6c2b5d4a9e7323643dc0c67b99d33b421aaa1
+Branch: teammate-a-ledger (pushed to origin)
+Repo:   https://github.com/its-advait/B-B-Hacks
+
+Handoff doc: docs/COMPATIBILITY-HANDOFF.md
+Raw live capture: evidence/compatibility-before.json
+
+Exports now on src/server/ledger/index.ts (frozen four first, originals kept):
+  createDemoEnvironment(onProgress)
+  readSnapshot(session)
+  sendTestPayment(session, actor)
+  removeIndividualApproval(session, address)
+
+Actor mapping: alice -> validCustomer, bob -> legacyCustomer,
+charlie -> stranger, company -> treasury.
+
+credentialStatus "valid" requires ALL of: matching subject, matching trusted
+issuer, matching credential type (case-insensitive), exists + accepted flag,
+a concrete ledger entry id, and not expired. An unaccepted/expired/incomplete
+read raises instead of reporting valid. A missing credential is "none";
+"revoked" is only used when setup recorded a validated CredentialDelete.
+
+Payments: validCustomer sends its real CredentialIDs; legacy/stranger never
+send CredentialIDs. Only validated tesSUCCESS = allowed, only validated
+tecNO_PERMISSION = blocked; anything else (incl. timeouts) is inconclusive and
+keeps its hash/code. Reviewed repair is preserved: readSnapshot internally
+previews the exact DepositPreauth {Account: company, Unauthorize: bob} plan,
+removeIndividualApproval is the approval action, refuses stale/reused plans,
+and never resubmits an uncertain transaction.
+
+Session: createDemoEnvironment returns an opaque in-process handle (no seeds,
+no signed blobs, not serializable/forgeable). Hold it in memory.
+
+Required deps/config: Node >= 22; xrpl 5.3.0; dotenv 16.6.1;
+.env XRPL_URL (official Devnet/Testnet WSS only), optional GATECHECK_NETWORK
+(must match), optional GATECHECK_RUNTIME_DIR (journal + stored plans, gitignored).
+Only official Devnet/Testnet WSS and matching network IDs accepted.
+Amendments verified on the validated ledger: Credentials, DepositAuth, DepositPreauth.
+
+Verification (real Devnet, network ID 2, 2026-10-11):
+  Snapshot: validCustomer=valid, legacyCustomer=revoked+individuallyApproved,
+            stranger=none.
+  Payments: validCustomer allowed (tesSUCCESS),
+            legacyCustomer allowed (tesSUCCESS, individually approved),
+            stranger blocked (tecNO_PERMISSION). No repair submitted.
+  npm run check (strict tsc --noEmit): pass.  npm test: 11/11 pass.
+
+Integration: take src/server/ledger/** (incl. compatibility.ts) and
+src/shared/contracts.ts. src/shared/contracts.ts on this branch is byte-identical
+to main, so it is a no-op on integration; no main file was edited. B's current
+aLedger.ts adapter uses the original lower-level exports, which remain exported
+alongside the four frozen functions, so both integration paths work.
