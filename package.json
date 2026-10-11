@@ -1,0 +1,38 @@
+{
+  "name": "gatecheck",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "concurrently -n server,client -c blue,green \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:server": "tsx watch src/server/index.ts",
+    "dev:client": "vite --host 127.0.0.1",
+    "build": "npm run build:server && npm run build:client",
+    "build:server": "tsc -p src/server/tsconfig.json",
+    "build:client": "vite build",
+    "start": "node dist/server/index.js",
+    "typecheck": "tsc -p src/shared/tsconfig.json --noEmit && tsc -p src/client/tsconfig.json --noEmit && tsc -p src/server/tsconfig.json --noEmit && tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "express": "^5.3.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "concurrently": "^10.0.6",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true
+  }
+}

@@ -1,0 +1,27 @@
+body {
+  margin: 0;
+  font-family: Georgia, 'Times New Roman', serif;
+  background: #f4f1ea;
+  color: #1c1915;
+}
+
+main {
+  max-width: 40rem;
+  margin: 4rem auto;
+  padding: 0 1.5rem;
+}
+
+h1 {
+  font-size: 2rem;
+  font-weight: 600;
+  margin: 0 0 1rem;
+}
+
+p {
+  font-size: 1.05rem;
+  line-height: 1.5;
+}
+
+[role='alert'] {
+  color: #8f1d1d;
+}
