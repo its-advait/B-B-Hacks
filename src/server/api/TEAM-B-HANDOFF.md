@@ -59,6 +59,23 @@ npx tsx --test src/server/policy/policy.test.ts src/server/api/aLedger.test.ts s
 - When A's module is integrated, add A's runtime dependency (`xrpl`, currently 5.3.0 on that branch) in the root package. B does not import it.
 - Root engines say Node `>=20`. A's branch says Node `>=22`. This checkout used Node 22.
 
-## Checks run here
+## Checks
 
-Policy and adapter tests use an in-memory stand-in for A's exports. They do not submit XRPL transactions. Live setup stays unavailable until `src/server/ledger/index.ts` from `teammate-a-ledger` is present in the same tree and the lead has installed `xrpl`.
+Unit tests use an in-memory stand-in and do not submit XRPL transactions.
+
+On 2026-10-11 the API process loaded `origin/teammate-a-ledger` (`c0662ea`) from `src/server/ledger/index.ts` and selected the frozen exports. A real Devnet session then completed setup, before checks, approved repair, and after checks:
+
+| Step | Result |
+|---|---|
+| Setup | DepositAuth on, trusted credential rule present, valid customer `valid`, legacy `revoked` and individually approved, stranger `none` |
+| Before | valid `tesSUCCESS` match, legacy `tesSUCCESS` mismatch, stranger `tecNO_PERMISSION` match |
+| Repair | validated `tesSUCCESS`, legacy direct approval removed |
+| After | valid `tesSUCCESS` match, legacy `tecNO_PERMISSION` match, stranger `tecNO_PERMISSION` match |
+
+The before report stayed intact. No second repair plan was stored. Shared `src/shared/contracts.ts` was not edited and is byte-identical to `main` and `teammate-a-ledger`.
+
+## Remaining integration blockers
+
+- `src/server/ledger/**` is not committed on `api`. This run used a local checkout of `teammate-a-ledger`. That branch has no merge base with `main`, so the lead needs to bring the ledger tree in deliberately.
+- Root `package.json` does not depend on `xrpl` 5.3.0 or `dotenv` 16.6.1. Those were installed locally and not saved. A clean install cannot load the ledger module until the lead adds them.
+- A's `createDemoEnvironment` reuses one in-process session and does not rebuild the legacy approval after a repair. A new mismatch demo needs a new process, which runs setup again.
