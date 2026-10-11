@@ -188,7 +188,8 @@ export function Dashboard({
   const readyForChecks =
     !fixtureOn && !sessionUnavailable && session?.status === 'ready' && Boolean(session.snapshot);
   const receipt = session?.repairReceipt;
-  const repairSucceeded = receipt?.validated === true && receipt.resultCode === 'tesSUCCESS';
+  const receiptAccepted = receipt?.validated === true && receipt.resultCode === 'tesSUCCESS';
+  const repairSucceeded = receiptAccepted && session?.status === 'ready' && !session.error;
   const canRunBefore = readyForChecks && checksApproved && !mutationsHeld && !repairSucceeded;
   const planSource = [...reports].reverse().find((report) => report.repairPlan?.id === plan?.id) ?? null;
   const planNetwork = planSource?.snapshot.network ?? snapshot?.network ?? evidenceNetwork ?? 'Unknown';
@@ -680,6 +681,8 @@ export function Dashboard({
           <p role="status">Repair succeeded. The backend returned a validated tesSUCCESS receipt.</p>
         ) : session?.status === 'repairing' ? (
           <p role="status">Repair was accepted and is still running. Success waits for a validated tesSUCCESS receipt.</p>
+        ) : receiptAccepted ? (
+          <p role="alert">A validated tesSUCCESS receipt is stored, but the session did not return to ready. The plan will not be submitted again.</p>
         ) : receipt ? (
           <p role="alert">A repair receipt is present, but it is not a validated tesSUCCESS result.</p>
         ) : (

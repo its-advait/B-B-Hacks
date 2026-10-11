@@ -1,81 +1,205 @@
 # Teammate B handoff
 
-Repository remote: `https://github.com/its-advait/B-B-Hacks`  
-API branch: `api` (from `main` at `b5b7cd2`)  
-Ledger branch inspected, not merged: `teammate-a-ledger` at `1fbc28b` (no merge base with `main`)
+Repository: `https://github.com/its-advait/B-B-Hacks`  
+API branch: `api`  
+B owns `src/server/api/**`, `src/server/policy/**`, and `src/server/index.ts`.
 
-## Ownership
+A owns `src/server/ledger/**`. The integration lead owns `src/client/**`, `src/shared/contracts.ts`, `package.json`, lockfiles, root config, and `README.md`. This note does not change those files.
 
-B edits `src/server/api/**`, `src/server/policy/**`, and `src/server/index.ts`.
+## What the API does
 
-A owns `src/server/ledger/**`. The integration lead owns `src/client/**`, `src/shared/contracts.ts`, `package.json`, lockfiles, root config, and `README.md`.
+The server is a controlled Devnet/Testnet demo. It does not accept wallet seeds, client-built transactions, or a mainnet signing path. Health reports the product mode, not a claim that a fixture server is a live ledger:
 
-## Ledger adapter
+`GET /api/health` → `{ "ok": true, "mode": "testnet" }`
 
-B loads `src/server/ledger/index.ts` at runtime. When the frozen compatibility exports are present (`createDemoEnvironment`, `readSnapshot`, `sendTestPayment`, `removeIndividualApproval`, added on `teammate-a-ledger` `4ff6c2b`), those are the integration path. `removeIndividualApproval` is called only after the API has accepted `approved: true` for the stored public plan. It reuses A's internal preview and approval checks. B does not write a second plan file.
+Live work loads `src/server/ledger/index.ts` at runtime. When the frozen exports exist, B calls `createDemoEnvironment`, `readSnapshot`, `sendTestPayment`, and `removeIndividualApproval`. If that module is missing, jobs fail closed. There is no fixture fallback in `src/server/index.ts`.
 
-The original lower-level exports remain a fallback: `connectLedger`, `createTestAccounts`, `setupPermissions`, `readPermissions`, `readCredential`, `testPayment`, `customerRefs`, `CUSTOMER_TYPE`, `previewRemoveDirectApproval`, and `removeDirectApproval`.
+A's client already rejects every endpoint except the official Devnet and Testnet WebSocket URLs. B additionally refuses to mark a session ready when the snapshot network is not `devnet` or `testnet`.
 
-Role addresses are `alice` → `validCustomer`, `bob` → `legacyCustomer`, `charlie` → `stranger`, `company` → treasury, `issuer` → issuer. Outcomes are not chosen from those names.
+## Credential meaning used by the evaluator
 
-`readCredential({ subject, issuer: snapshot.issuerAddress, credentialType: snapshot.credentialType })` maps to `valid` only when `exists && accepted && !expired && id`. A thrown read is inconclusive. A missing credential is `none` unless this session's `setupPermissions` call validated Bob's credential delete; that is the lifecycle evidence for `revoked`.
+`Actor.credentialStatus === 'valid'` means A's adapter found an accepted, unexpired credential that belongs to that actor and was issued for the snapshot issuer and credential type. The evaluator does not re-read the ledger. It allows that actor only when the snapshot issuer and credential type still match intended policy, or when the address is an exact intended exception.
 
-Legacy and stranger payments call `testPayment(address, treasury, [])` directly. The generic payment suite is not used. Receipts keep `validated`, `resultCode`, `transactionHash`, `ledgerIndex`, `sender`, `sequence`, and `lastLedgerSequence` on the private session. Public rows receive only the shared observation fields. `resultCode === 'INCONCLUSIVE'` or `successful === null` stays inconclusive, including when a hash is already known.
+`revoked` is used only when this session recorded a validated credential delete. A missing credential is `none`. Direct ledger approvals, DepositAuth, and trusted-credential-rule presence do not change the expected result. Address comparison is case-sensitive. Even-length hex credential types compare in canonical hex case; human-readable names keep their case.
 
-Repair preview and submission go through A's stored plans. The public plan id and fingerprint are A's. Approval is `removeDirectApproval(planId, { approved: true, planId, approvedBy: 'gatecheck-operator' })`. B does not write a second plan file and does not submit its own `DepositPreauth`. Client transaction JSON is ignored.
+Only a validated `tecNO_PERMISSION` with a transaction hash is an observed block. `tesSUCCESS` with a hash is an observed allow. Every other code, including `tecUNFUNDED_PAYMENT`, timeouts, and missing hashes, stays inconclusive.
 
-A's module is process-global. This API branch does not copy `src/server/ledger/**` or add `xrpl`. When that directory is absent, jobs fail closed.
+## Public and private state
 
-## Contract gap
+Public JSON is `PublicSession`: status, progress, snapshot, immutable reports, a validated repair receipt, and a sanitized error. `GET` returns a structured clone. Reports keep before and after history, timestamps, ledger codes, hashes, and the reviewed unsigned `DepositPreauth` / `Unauthorize` transaction.
 
-The shared `Actor` still has no per-actor issuer, type, acceptance, or expiry. The adapter applies those checks before setting `credentialStatus`. No shared-contract edit was required for this mapping. Direct ledger approvals stay out of `individualExceptions`.
+Private memory holds the opaque ledger session, intended policy, the mutation lock, the active plan, and consumed or uncertain plan ids. It is not logged and not spread into responses. Wallet seeds stay inside A's process memory.
 
-## API that is implemented
+If `GATECHECK_SESSION_DIR` is set, B writes only that public projection, using a temp file and rename. A restart does not load those files. An unknown id is `404` and must be recreated. Please gitignore `GATECHECK_SESSION_DIR`, plus A's `.private` and `.runtime` directories.
 
-| Method | Behavior |
-|---|---|
-| `GET /api/health` | `{ ok: true, mode: 'testnet' }` |
-| `POST /api/sessions` | Requires `approveTestnetSetup: true`. Returns `202 { sessionId }`. |
-| `GET /api/sessions/:id` | `PublicSession` |
-| `POST /api/sessions/:id/checks` | Requires `phase` `before` or `after` and `approveTestPayments: true`. |
-| `POST /api/sessions/:id/repair` | Requires stored `planId` and `approved: true`. Client transaction JSON is ignored. |
+## Endpoints
 
-Missing approval is 400. Unknown session is 404. A busy session, bad phase, or a repair A's module rejects as stale is 409. After-checks require a validated `tesSUCCESS` repair receipt. The published repair fingerprint is A's permission-state fingerprint. Only validated `tecNO_PERMISSION` counts as blocked. `INCONCLUSIVE` and other non-authorization codes stay inconclusive. One uncertain repair is not resubmitted.
+Errors are `{ "error": { "code": "string", "message": "string" } }`. Only literal boolean `true` counts as approval. Request bodies are limited to 16kb. Ids are bounded. Unknown `/api/*` routes return JSON 404. `202` means the job was accepted. Completion, failure, and inconclusive results appear on `GET`.
 
-## Scripts
+### `POST /api/sessions`
 
-Root scripts, unchanged: `npm run dev`, `npm run dev:server`, `npm run dev:client`, `npm run typecheck`, `npm run build`, `npm start`.
+```json
+{ "approveTestnetSetup": true }
+```
 
-B tests, with no root script because `package.json` is lead-owned:
+`202`
+
+```json
+{ "sessionId": "7c9e6679-7425-40de-944b-e07fc1f90ae7" }
+```
+
+Missing approval is `400 approval_required`.
+
+### `GET /api/sessions/:id`
+
+`200` `PublicSession`
+
+```json
+{
+  "id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+  "status": "ready",
+  "network": "devnet",
+  "progress": "Checks complete. A repair plan is waiting for review.",
+  "snapshot": {
+    "network": "devnet",
+    "ledgerIndex": 100,
+    "treasuryAddress": "rTreasury",
+    "issuerAddress": "rIssuer",
+    "credentialType": "customer",
+    "depositAuthEnabled": true,
+    "trustedCredentialRulePresent": true,
+    "actors": [],
+    "capturedAt": "2026-01-01T00:00:00.000Z"
+  },
+  "reports": [],
+  "repairReceipt": {
+    "transactionHash": "A8DC…",
+    "resultCode": "tesSUCCESS",
+    "validated": true
+  }
+}
+```
+
+`repairReceipt` is omitted until a validated repair exists. `error` is omitted unless the session failed or verification is uncertain. The frontend can download this JSON directly. There is no separate export route.
+
+### `POST /api/sessions/:id/checks`
+
+```json
+{ "phase": "before", "approveTestPayments": true }
+```
+
+`phase` is `before` or `after`. `202 { "sessionId": "..." }`.
+
+Before checks are allowed once setup is ready. After checks require a validated `tesSUCCESS` repair receipt. A second check while one is running is `409 job_in_progress`.
+
+### `POST /api/sessions/:id/repair`
+
+```json
+{ "planId": "stored-plan-id", "approved": true }
+```
+
+Any other field, including a client `unsignedTransaction`, is `400 invalid_body` and makes no ledger call. The handler holds the session lock, reads fresh state, and returns `409 stale_plan` before `202` when the fingerprint, treasury, approval, or exception no longer matches. A matching plan returns `202`, then submits in the background.
+
+Repair submission calls `removeIndividualApproval(session, storedAddress)` only. The browser cannot choose the address.
+
+## State transitions
+
+| Status | Meaning | Buttons |
+|---|---|---|
+| `settingUp` | Environment job is running | Disable setup, checks, and repair. Show `progress`. |
+| `ready` | Idle. Snapshot is present. | Enable before checks. Enable repair only when the latest before report has a `repairPlan`. Enable after checks only when `repairReceipt.validated` is true. |
+| `checking` | Payments are running | Disable every action. |
+| `repairing` | Reviewed removal was accepted and is still running | Disable every action. |
+| `error` | Setup, checks, or repair failed | Show `error`. Offer a new session when setup failed or the repair text says a fresh environment is required. Do not offer the same repair again. |
+
+Poll `GET /api/sessions/:id` immediately after every `202`, once per second. Stop when status is `ready` or `error`. Treat a report as new only when its `id` was not in the previous response. Phase alone is not enough, because the before report stays in the array.
+
+A `409 stale_plan` means the stored plan was invalidated and nothing was submitted. Show the error message and offer Run checks again.
+
+An inconclusive row is a neutral or warning state. Do not show it as a successful block. Expected blocked plus observed blocked, with verdict `match`, is a passing assertion. A network failure is never successful protection.
+
+The repair receipt and the after report are different objects. The receipt says the removal transaction validated. The after report is a new payment suite.
+
+## Repair limits
+
+The only generated transaction is:
+
+```json
+{
+  "TransactionType": "DepositPreauth",
+  "Account": "<snapshot treasury>",
+  "Unauthorize": "<one actor address>"
+}
+```
+
+It is proposed only when a validated allowed payment was expected blocked, that actor has a direct approval, the address is not an intended exception, and DepositAuth is enabled. One report holds one plan. The fingerprint covers the shared snapshot fields listed in `src/server/policy/fingerprint.ts` (network, treasury, issuer, type, DepositAuth, credential-rule presence, actor address/status/approval, and intended issuer/type/exceptions). It excludes ledger index, capture time, balances, fees, and sequence. It is not a hash of every ledger object, and a read followed by a write is not an atomic on-ledger condition.
+
+A timeout or unvalidated receipt is uncertain. The plan is not offered again. B does not have a reconciliation method beyond A's error text, so the controlled demo needs a new process and a new session. A validated receipt whose follow-up read fails is kept, marked uncertain, and not retried.
+
+A's `removeIndividualApproval` only removes the legacy address stored in its own in-process preview, and `createDemoEnvironment` reuses that process session. It does not rebuild the legacy approval after a repair. A new mismatch demo needs a new process.
+
+## Commands
+
+Server, after A's module and its runtime dependencies are installed:
+
+```bash
+npm run dev:server
+```
+
+Port defaults to `3001` (`PORT`). Optional public metadata directory: `GATECHECK_SESSION_DIR`.
+
+Owned tests, because `package.json` is lead-owned and has no test script:
 
 ```bash
 npx tsx --test src/server/policy/policy.test.ts src/server/api/aLedger.test.ts src/server/api/api.test.ts
 ```
 
-## Lead coordination
+Typecheck and build:
 
-- Add `"test": "tsx --test src/server/policy/policy.test.ts src/server/api/aLedger.test.ts src/server/api/api.test.ts"` if the team wants one command.
-- Do not merge `teammate-a-ledger` into `main` as-is. It has a different history, package, and contract.
-- When A's module is integrated, add A's runtime dependency (`xrpl`, currently 5.3.0 on that branch) in the root package. B does not import it.
-- Root engines say Node `>=20`. A's branch says Node `>=22`. This checkout used Node 22.
+```bash
+npm run typecheck
+npm run build
+```
 
-## Checks
+Real HTTP smoke, only against an already-running server, and only when a new faucet run is intended:
 
-Unit tests use an in-memory stand-in and do not submit XRPL transactions.
+```bash
+npx tsx src/server/api/smoke.ts --run-real-testnet
+```
 
-On 2026-10-11 the API process loaded `origin/teammate-a-ledger` (`c0662ea`) from `src/server/ledger/index.ts` and selected the frozen exports. A real Devnet session then completed setup, before checks, approved repair, and after checks:
+`GATECHECK_API_URL` defaults to `http://127.0.0.1:3001`. Without the flag the runner exits before creating accounts. This turn did not invoke the flag.
+
+## Real ledger result already recorded
+
+On 2026-10-11 an API process loaded a local checkout of `origin/teammate-a-ledger` (`c0662ea`) and completed one Devnet session (`fc118c09-c727-452b-8639-7327d44ba8b4`):
 
 | Step | Result |
 |---|---|
 | Setup | DepositAuth on, trusted credential rule present, valid customer `valid`, legacy `revoked` and individually approved, stranger `none` |
-| Before | valid `tesSUCCESS` match, legacy `tesSUCCESS` mismatch, stranger `tecNO_PERMISSION` match |
-| Repair | validated `tesSUCCESS`, legacy direct approval removed |
-| After | valid `tesSUCCESS` match, legacy `tecNO_PERMISSION` match, stranger `tecNO_PERMISSION` match |
+| Before | valid `tesSUCCESS` match `61CA36E6…`, legacy `tesSUCCESS` mismatch `F7B89FCB…`, stranger `tecNO_PERMISSION` match `6FC27F7F…` |
+| Repair | validated `tesSUCCESS` `A8DCE6B0…`; legacy direct approval removed |
+| After | valid `tesSUCCESS` match `3C620D03…`, legacy `tecNO_PERMISSION` match `41DFB3B1…`, stranger `tecNO_PERMISSION` match `3FF83EC4…` |
 
-The before report stayed intact. No second repair plan was stored. Shared `src/shared/contracts.ts` was not edited and is byte-identical to `main` and `teammate-a-ledger`.
+That run used the previous repair path, which waited for submission before returning `202`. The current path returns `409` for a stale plan before `202`, then submits in the background. No second faucet run was started for that split.
 
-## Remaining integration blockers
+## Checks this turn
 
-- `src/server/ledger/**` is not committed on `api`. This run used a local checkout of `teammate-a-ledger`. That branch has no merge base with `main`, so the lead needs to bring the ledger tree in deliberately.
-- Root `package.json` does not depend on `xrpl` 5.3.0 or `dotenv` 16.6.1. Those were installed locally and not saved. A clean install cannot load the ledger module until the lead adds them.
-- A's `createDemoEnvironment` reuses one in-process session and does not rebuild the legacy approval after a repair. A new mismatch demo needs a new process, which runs setup again.
+`npx tsx --test src/server/policy/policy.test.ts src/server/api/aLedger.test.ts src/server/api/api.test.ts` — 30 passed, 0 failed.
+
+`npm run typecheck` — passed, including the local untracked ledger tree.
+
+`npm run build` — passed.
+
+`npx tsx src/server/api/smoke.ts` without `--run-real-testnet` — exited 1 and did not create accounts.
+
+## Remaining blockers
+
+- `src/server/ledger/**` is not on `api`. The local checkout is untracked and must not be committed from this branch. The lead has to bring A's tree in deliberately. `teammate-a-ledger` has no merge base with `main`.
+- Root `package.json` does not depend on `xrpl` 5.3.0 or `dotenv` 16.6.1. A clean install cannot load the ledger module until those are added.
+- Gitignore `.private`, `.runtime`, and `GATECHECK_SESSION_DIR`.
+- A's in-process demo does not reconstruct the legacy approval after repair, and its removal function accepts only that stored legacy address.
+- The smoke runner was not executed against Devnet in this turn.
+
+## Suggested README paragraph
+
+GateCheck's API runs on port 3001 and the Vite client proxies `/api`. Create a session with `approveTestnetSetup: true`, poll `GET /api/sessions/:id` once per second, then run before checks, approve the returned repair plan id, and run after checks. Only literal `true` is approval. A matching blocked payment is a passed check. An inconclusive row is not a block. The repair receipt and the after report are separate. The server talks only to XRPL Devnet or Testnet through the ledger module and never accepts a wallet seed or a client-built transaction.

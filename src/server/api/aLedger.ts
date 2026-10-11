@@ -207,7 +207,7 @@ export function createALedgerPort(mod: ALedgerModule): LedgerPort {
     async previewDirectApprovalRepair(session, address): Promise<RepairPlan> {
       const demo = asDemoSession(session);
       const preview = await mod.previewRemoveDirectApproval(demo.accounts.company, address, mod.customerRefs(demo.accounts));
-      return projectStoredRepair(preview);
+      return projectStoredRepair(preview, demo.network);
     },
 
     async executeStoredRepair(session, plan): Promise<RepairExecution> {

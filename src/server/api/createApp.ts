@@ -6,12 +6,16 @@ import { createSessionService } from './sessions.js';
 
 export interface AppDependencies {
   resolveLedger: () => Promise<LedgerPort>;
+  /** Optional directory for public session JSON. It is never reloaded as a live session. */
+  publicMetadataDir?: string;
 }
+
+const BOUNDED_ID = /^[A-Za-z0-9_-]{1,80}$/;
 
 function sessionId(value: string | string[] | undefined): string {
   const id = Array.isArray(value) ? value[0] : value;
-  if (!id) {
-    throw new ApiError(404, 'session_not_found', 'Unknown session. Create a new test environment.');
+  if (!id || !BOUNDED_ID.test(id)) {
+    throw new ApiError(400, 'invalid_body', 'Session id must be a bounded id.');
   }
   return id;
 }
@@ -32,9 +36,21 @@ function asyncHandler(
   };
 }
 
+function isPayloadTooLarge(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) {
+    return false;
+  }
+  const record = error as { status?: unknown; type?: unknown };
+  return record.status === 413 || record.type === 'entity.too.large';
+}
+
 const jsonErrorHandler: ErrorRequestHandler = (error, _req, res, next) => {
   if (error instanceof SyntaxError && 'body' in error) {
     res.status(400).json({ error: { code: 'invalid_body', message: 'Request body must be JSON.' } });
+    return;
+  }
+  if (isPayloadTooLarge(error)) {
+    res.status(400).json({ error: { code: 'invalid_body', message: 'Request body is too large.' } });
     return;
   }
   next(error);
@@ -42,9 +58,11 @@ const jsonErrorHandler: ErrorRequestHandler = (error, _req, res, next) => {
 
 export function createApp(dependencies: AppDependencies): Express {
   const app = express();
-  const sessions = createSessionService(dependencies.resolveLedger);
+  const sessions = createSessionService(dependencies.resolveLedger, {
+    publicMetadataDir: dependencies.publicMetadataDir,
+  });
 
-  app.use(express.json());
+  app.use(express.json({ limit: '16kb' }));
 
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true, mode: 'testnet' });
@@ -84,6 +102,10 @@ export function createApp(dependencies: AppDependencies): Express {
       }
     }),
   );
+
+  app.use('/api', (_req, res) => {
+    res.status(404).json({ error: { code: 'not_found', message: 'Unknown API route.' } });
+  });
 
   app.use(jsonErrorHandler);
   app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {

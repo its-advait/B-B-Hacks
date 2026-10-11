@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { AccountSnapshot, ActorRole, PaymentObservation, RepairPlan } from '../../shared/contracts.js';
 import { deriveIntendedPolicy } from '../policy/evaluate.js';
 import { authorizationFingerprint } from '../policy/fingerprint.js';
+import { repairConfigurationLabel } from '../policy/report.js';
 import type { LedgerPort, RepairExecution } from './ledgerPort.js';
 
 /**
@@ -42,7 +43,7 @@ export function createFrozenLedgerPort(mod: FrozenLedgerModule): LedgerPort {
       }
       return {
         id: randomUUID(),
-        description: `Testnet configuration change: remove the direct DepositPreauth approval for ${address}. Credential rules and every other approval stay in place.`,
+        description: `${repairConfigurationLabel(snapshot.network)}: remove the direct DepositPreauth approval for ${address}. Credential rules and every other approval stay in place.`,
         affectedAddress: address,
         unsignedTransaction: {
           TransactionType: 'DepositPreauth',

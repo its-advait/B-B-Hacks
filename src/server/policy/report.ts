@@ -11,42 +11,58 @@ import type {
   RepairPlan,
   Report,
 } from '../../shared/contracts.js';
-import { expectedOutcome } from './evaluate.js';
+import { evaluateIntended, PolicyInputError } from './evaluate.js';
 import { authorizationFingerprint } from './fingerprint.js';
 
 export const CHECK_ACTORS: readonly ActorRole[] = ['validCustomer', 'legacyCustomer', 'stranger'];
 
-/** DepositAuth's validated rejection. Other codes are not permission evidence. */
+/** DepositAuth's validated rejection. Other tec/tem/ter codes are not permission evidence. */
 const AUTHORIZATION_DENIAL = 'tecNO_PERMISSION';
 
+/** Names the network the snapshot actually reported. Devnet must not be called Testnet. */
+export function repairConfigurationLabel(network: string): string {
+  if (network === 'devnet') {
+    return 'Devnet configuration change';
+  }
+  if (network === 'testnet') {
+    return 'Testnet configuration change';
+  }
+  return 'Test network configuration change';
+}
+
+function hasTransactionEvidence(observation: PaymentObservation): boolean {
+  return typeof observation.transactionHash === 'string' && observation.transactionHash.length > 0 && typeof observation.resultCode === 'string' && observation.resultCode.length > 0;
+}
+
+/**
+ * A definitive allowed result needs a validated tesSUCCESS and a hash.
+ * A definitive blocked result needs a validated tecNO_PERMISSION and a hash.
+ * Timeouts, transport failures, unvalidated results, insufficient funds,
+ * contradictory codes, and missing evidence stay inconclusive.
+ */
 export function classifyObservation(observation: PaymentObservation): PaymentObservation {
-  if (observation.observed === 'inconclusive' || observation.validated !== true) {
-    return { ...observation, observed: 'inconclusive' };
-  }
-
-  if (observation.observed === 'allowed') {
-    if (observation.resultCode === 'tesSUCCESS') {
-      return observation;
+  const copy: PaymentObservation = { ...observation };
+  if (copy.observed === 'inconclusive' || copy.validated !== true || !hasTransactionEvidence(copy)) {
+    const inconclusive: PaymentObservation = { ...copy, observed: 'inconclusive' };
+    if (!copy.error && copy.validated === true && !hasTransactionEvidence(copy)) {
+      inconclusive.error = 'The observation is missing transaction evidence, so the authorization outcome is inconclusive.';
     }
-    return {
-      ...observation,
-      observed: 'inconclusive',
-      error:
-        observation.error ??
-        `Validated result ${observation.resultCode ?? 'unknown'} is not tesSUCCESS, so the payment is not an authorization success.`,
-    };
+    return inconclusive;
   }
 
-  if (observation.resultCode === AUTHORIZATION_DENIAL) {
-    return observation;
+  if (copy.observed === 'allowed' && copy.resultCode === 'tesSUCCESS') {
+    return copy;
+  }
+  if (copy.observed === 'blocked' && copy.resultCode === AUTHORIZATION_DENIAL) {
+    return copy;
   }
 
   return {
-    ...observation,
+    ...copy,
     observed: 'inconclusive',
     error:
-      observation.error ??
-      `Result ${observation.resultCode ?? 'unknown'} is not a validated authorization rejection (${AUTHORIZATION_DENIAL}).`,
+      copy.error ??
+      `Result ${copy.resultCode ?? 'unknown'} does not establish a validated authorization outcome (${copy.observed === 'allowed' ? 'tesSUCCESS' : AUTHORIZATION_DENIAL}).`,
   };
 }
 
@@ -57,38 +73,69 @@ function verdictFor(expected: 'allowed' | 'blocked', observed: Outcome): CheckRo
   return observed === expected ? 'match' : 'mismatch';
 }
 
+export function assertUniqueDemoActors(snapshot: AccountSnapshot): Map<ActorRole, Actor> {
+  const found = new Map<ActorRole, Actor>();
+  for (const actor of snapshot.actors) {
+    if (!CHECK_ACTORS.includes(actor.role)) {
+      throw new PolicyInputError(`Snapshot actor role ${String(actor.role)} is outside the controlled demo.`);
+    }
+    if (found.has(actor.role)) {
+      throw new PolicyInputError(`Snapshot actor role ${actor.role} appears more than once.`);
+    }
+    found.set(actor.role, actor);
+  }
+  for (const role of CHECK_ACTORS) {
+    if (!found.has(role)) {
+      throw new PolicyInputError(`Snapshot is missing the required ${role} actor.`);
+    }
+  }
+  return found;
+}
+
+function indexObservations(observations: PaymentObservation[]): Map<ActorRole, PaymentObservation> {
+  const classified = new Map<ActorRole, PaymentObservation>();
+  for (const observation of observations) {
+    if (!CHECK_ACTORS.includes(observation.actor)) {
+      throw new PolicyInputError(`Observation actor ${String(observation.actor)} is outside the controlled demo.`);
+    }
+    if (classified.has(observation.actor)) {
+      throw new PolicyInputError(`Duplicate observation for ${observation.actor}.`);
+    }
+    classified.set(observation.actor, classifyObservation(observation));
+  }
+  return classified;
+}
+
 function explain(input: {
-  actor: Actor | undefined;
+  actor: Actor;
   expected: 'allowed' | 'blocked';
+  reason: string;
   observed: Outcome;
-  policy: IntendedPolicy;
   snapshot: AccountSnapshot;
   observation: PaymentObservation;
   repaired: boolean;
   repairDeferred: boolean;
+  repairSuppressedReason?: string;
+  additionalConflicts: boolean;
 }): string {
-  const { actor, expected, observed, policy, snapshot, observation, repaired } = input;
-  const address = actor?.address ?? observation.actor;
+  const { actor, expected, reason, observed, snapshot, observation } = input;
   const code = observation.resultCode ? ` Result code ${observation.resultCode}.` : '';
   const detail = observation.error ? ` ${observation.error}` : '';
-
-  if (!actor) {
-    return `The snapshot has no actor record for ${observation.actor}, so this observation cannot be compared with intended policy.${code}${detail}`;
-  }
+  const expectation = `Intended policy expected ${expected}. ${reason}`;
 
   if (observed === 'inconclusive') {
-    return `The ${actor.role} check is inconclusive.${code}${detail} This is not evidence that the payment was blocked.`;
+    return `${expectation} The ledger did not establish an authorization outcome.${code}${detail} This is not evidence that the payment was blocked.`;
   }
 
-  if (expected === 'allowed' && observed === 'allowed') {
-    if (policy.individualExceptions.includes(actor.address)) {
-      return `${address} matched intended policy because that address is an explicit exception. The validated ledger result allowed the payment.${code}`;
-    }
-    return `${address} matched intended policy. Credential status is valid for snapshot issuer ${snapshot.issuerAddress} and type ${snapshot.credentialType}, which is the configured issuer and type. The validated ledger result allowed the payment.${code}`;
-  }
-
-  if (expected === 'blocked' && observed === 'blocked') {
-    return `${address} matched intended policy. Credential status is ${actor.credentialStatus} and the address is not an intended exception. The validated ledger result denied the payment.${code}`;
+  if (expected === observed) {
+    const ledger =
+      observed === 'allowed'
+        ? `The validated ledger result allowed the payment.${code}`
+        : `The validated ledger result denied the payment.${code}`;
+    const setting = snapshot.depositAuthEnabled
+      ? 'Deposit Authorization is enabled on the inspected account.'
+      : 'Deposit Authorization is not enabled on the inspected account.';
+    return `${expectation} ${ledger} ${setting} This check matched.`;
   }
 
   if (expected === 'blocked' && observed === 'allowed') {
@@ -96,20 +143,39 @@ function explain(input: {
       const approvalNote = actor.individuallyApproved
         ? ' A direct account preauthorization is present, but removing it would not show that the rule is enforced while Deposit Authorization is off.'
         : '';
-      return `Intended policy blocks ${address} (credential status ${actor.credentialStatus}), but the validated payment succeeded.${code} Deposit Authorization is not enabled.${approvalNote} No repair is proposed.`;
+      return `${expectation} The validated ledger result allowed the payment.${code} Deposit Authorization is not enabled.${approvalNote} No repair is proposed.`;
     }
-    if (actor.individuallyApproved) {
-      const repair = input.repairDeferred
-        ? ' A ledger repair preview was not stored, so no transaction was submitted.'
-        : repaired
-          ? ' The repair removes only this direct approval.'
-          : ' Another conflicting approval is repaired first; rerun checks for this one.';
-      return `Intended policy blocks ${address} (credential status ${actor.credentialStatus}; not an intended exception), but the validated payment succeeded.${code} The snapshot shows a direct account preauthorization. That approval is ledger state, not an intended exception.${repair}`;
+    if (actor.individuallyApproved && !input.repairDeferred && input.repaired) {
+      const limit = input.additionalConflicts
+        ? ' The report stores only one repair plan. Other conflicts are not included in this plan.'
+        : '';
+      return `${expectation} The validated ledger result allowed the payment.${code} The snapshot shows a direct account preauthorization. That approval is ledger state, not an intended exception. The repair removes only this direct approval.${limit}`;
     }
-    return `Intended policy blocks ${address} (credential status ${actor.credentialStatus}), but the validated payment succeeded.${code} The snapshot does not show a direct account preauthorization for this address, so no single-approval repair is proposed.`;
+    if (actor.individuallyApproved && input.repairDeferred) {
+      const why = input.repairSuppressedReason ?? 'A ledger repair preview was not stored, so no transaction was submitted.';
+      return `${expectation} The validated ledger result allowed the payment.${code} The snapshot shows a direct account preauthorization. ${why}`;
+    }
+    if (actor.individuallyApproved && input.additionalConflicts) {
+      return `${expectation} The validated ledger result allowed the payment.${code} The snapshot shows a direct account preauthorization. The report stores only one repair plan. Other conflicts are not included in this plan.`;
+    }
+    return `${expectation} The validated ledger result allowed the payment.${code} The snapshot does not show a direct account preauthorization for this address, so no single-approval repair is proposed.`;
   }
 
-  return `Intended policy allows ${address}, but the validated ledger result denied the payment.${code} This is missing authorization, not an extra direct approval, so no Unauthorize repair is proposed.`;
+  return `${expectation} The validated ledger result denied the payment.${code} This is missing authorization, not an extra direct approval, so no Unauthorize repair is proposed.`;
+}
+
+function isRepairCandidate(actor: Actor, expected: 'allowed' | 'blocked', observation: PaymentObservation, snapshot: AccountSnapshot, policy: IntendedPolicy): boolean {
+  return (
+    expected === 'blocked' &&
+    observation.observed === 'allowed' &&
+    observation.validated === true &&
+    typeof observation.transactionHash === 'string' &&
+    observation.transactionHash.length > 0 &&
+    observation.resultCode === 'tesSUCCESS' &&
+    actor.individuallyApproved &&
+    snapshot.depositAuthEnabled &&
+    !policy.individualExceptions.includes(actor.address)
+  );
 }
 
 export function buildReport(input: {
@@ -120,40 +186,35 @@ export function buildReport(input: {
   completedAt?: string;
   planId?: string;
   includeRepair?: boolean;
+  repairSuppressedReason?: string;
 }): Report {
   const snapshot = structuredClone(input.snapshot);
   const policy = structuredClone(input.policy);
-  const classified = new Map<ActorRole, PaymentObservation>();
-  for (const observation of input.observations) {
-    classified.set(observation.actor, classifyObservation(observation));
-  }
+  const observations = input.observations.map((observation) => structuredClone(observation));
+  const actorsByRole = assertUniqueDemoActors(snapshot);
+  const classified = indexObservations(observations);
 
-  const actorsByRole = new Map(snapshot.actors.map((actor) => [actor.role, actor]));
-  const draft: Array<{ actor: Actor | undefined; observation: PaymentObservation; expected: 'allowed' | 'blocked' }> = [];
-
+  const draft: Array<{ actor: Actor; observation: PaymentObservation; expected: 'allowed' | 'blocked'; reason: string }> = [];
   for (const role of CHECK_ACTORS) {
     const actor = actorsByRole.get(role);
+    if (!actor) {
+      throw new PolicyInputError(`Snapshot is missing the required ${role} actor.`);
+    }
+    const decision = evaluateIntended(actor, policy, snapshot);
     const observation = classified.get(role) ?? {
       actor: role,
       observed: 'inconclusive' as const,
       validated: false,
       error: 'No payment observation was returned for this actor.',
     };
-    const expected = actor ? expectedOutcome(actor, policy, snapshot) : 'blocked';
-    draft.push({ actor, observation, expected });
+    draft.push({ actor, observation, expected: decision.expected, reason: decision.reason });
   }
 
-  const repairIndex = draft.findIndex(({ actor, observation, expected }) => {
-    return (
-      actor !== undefined &&
-      expected === 'blocked' &&
-      observation.observed === 'allowed' &&
-      observation.validated === true &&
-      actor.individuallyApproved &&
-      snapshot.depositAuthEnabled &&
-      !policy.individualExceptions.includes(actor.address)
-    );
-  });
+  const candidateIndexes = draft.flatMap((item, index) =>
+    isRepairCandidate(item.actor, item.expected, item.observation, snapshot, policy) ? [index] : [],
+  );
+  const repairIndex = input.includeRepair === false ? -1 : (candidateIndexes[0] ?? -1);
+  const deferredIndex = input.includeRepair === false ? (candidateIndexes[0] ?? -1) : -1;
 
   const rows: CheckRow[] = draft.map((item, index) => {
     const observed = item.observation.observed;
@@ -166,12 +227,14 @@ export function buildReport(input: {
       explanation: explain({
         actor: item.actor,
         expected: item.expected,
+        reason: item.reason,
         observed,
-        policy,
         snapshot,
         observation: item.observation,
-        repaired: index === repairIndex && input.includeRepair !== false,
-        repairDeferred: index === repairIndex && input.includeRepair === false,
+        repaired: index === repairIndex,
+        repairDeferred: index === deferredIndex,
+        repairSuppressedReason: input.repairSuppressedReason,
+        additionalConflicts: candidateIndexes.length > 1 && candidateIndexes.includes(index),
       }),
     };
     if (item.observation.transactionHash) {
@@ -195,12 +258,16 @@ export function buildReport(input: {
     completedAt: input.completedAt ?? new Date().toISOString(),
   };
 
-  const repairTarget = input.includeRepair === false ? undefined : repairIndex >= 0 ? draft[repairIndex] : undefined;
-  if (repairTarget?.actor) {
+  const repairTarget = repairIndex >= 0 ? draft[repairIndex] : undefined;
+  if (repairTarget) {
     const affectedAddress = repairTarget.actor.address;
+    const limit =
+      candidateIndexes.length > 1
+        ? ' Only this address is included. The shared report type permits one plan, so other conflicts still need a later check.'
+        : '';
     const plan: RepairPlan = {
       id: input.planId ?? randomUUID(),
-      description: `Testnet configuration change: remove the direct DepositPreauth approval for ${affectedAddress}. Intended policy does not list this address as an exception. Credential rules and every other approval stay in place.`,
+      description: `${repairConfigurationLabel(snapshot.network)}: remove the direct DepositPreauth approval for ${affectedAddress}. Intended policy does not list this address as an exception. Credential rules and every other approval stay in place.${limit}`,
       affectedAddress,
       unsignedTransaction: {
         TransactionType: 'DepositPreauth',
