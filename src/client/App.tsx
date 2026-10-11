@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { Dashboard } from './Dashboard';
+import { buildFixtureSession, type FixtureScenario } from './fixtures';
 
 type HealthState =
   | { status: 'loading' }
@@ -7,6 +9,10 @@ type HealthState =
 
 export function App() {
   const [health, setHealth] = useState<HealthState>({ status: 'loading' });
+  const [fixtureOn, setFixtureOn] = useState(false);
+  const [scenario, setScenario] = useState<FixtureScenario>('before');
+  const showFixtureSwitch = import.meta.env.DEV;
+  const session = showFixtureSwitch && fixtureOn ? buildFixtureSession(scenario) : null;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -37,15 +43,14 @@ export function App() {
   }, []);
 
   return (
-    <main>
-      <h1>GateCheck — Testnet</h1>
-      {health.status === 'loading' ? <p role="status">Checking API health…</p> : null}
-      {health.status === 'success' ? (
-        <p role="status">API health check succeeded: {health.body}</p>
-      ) : null}
-      {health.status === 'error' ? (
-        <p role="alert">API health check failed: {health.message}</p>
-      ) : null}
-    </main>
+    <Dashboard
+      health={health}
+      showFixtureSwitch={showFixtureSwitch}
+      fixtureOn={showFixtureSwitch && fixtureOn}
+      scenario={scenario}
+      onFixtureOnChange={setFixtureOn}
+      onScenarioChange={setScenario}
+      session={session}
+    />
   );
 }
