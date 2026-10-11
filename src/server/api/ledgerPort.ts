@@ -1,4 +1,4 @@
-import type { AccountSnapshot, ActorRole, PaymentObservation } from '../../shared/contracts.js';
+import type { AccountSnapshot, ActorRole, PaymentObservation, RepairPlan } from '../../shared/contracts.js';
 
 export interface RepairExecution {
   transactionHash: string;
@@ -7,14 +7,15 @@ export interface RepairExecution {
 }
 
 /**
- * Private adapter matching the agreed ledger exports.
- * LedgerSession stays opaque and is never serialized.
+ * Session-facing port. The live implementation calls teammate A's module.
+ * Ledger sessions stay opaque and are never serialized.
  */
 export interface LedgerPort {
   createDemoEnvironment(onProgress: (message: string) => void): Promise<unknown>;
   readSnapshot(session: unknown): Promise<AccountSnapshot>;
   sendTestPayment(session: unknown, actor: ActorRole): Promise<PaymentObservation>;
-  removeIndividualApproval(session: unknown, address: string): Promise<RepairExecution>;
+  previewDirectApprovalRepair(session: unknown, address: string): Promise<RepairPlan>;
+  executeStoredRepair(session: unknown, planId: string): Promise<RepairExecution>;
 }
 
 export class LedgerUnavailableError extends Error {
@@ -38,7 +39,10 @@ export function unavailableLedgerPort(reason: string): LedgerPort {
     sendTestPayment() {
       return fail();
     },
-    removeIndividualApproval() {
+    previewDirectApprovalRepair() {
+      return fail();
+    },
+    executeStoredRepair() {
       return fail();
     },
   };
