@@ -100,7 +100,7 @@ class ScriptedLedger implements LedgerPort {
     this.plans.set(id, { address, consumed: false });
     return {
       id,
-      description: 'Testnet configuration change: stored ledger preview',
+      description: 'Devnet configuration change: stored ledger preview',
       affectedAddress: address,
       unsignedTransaction: {
         TransactionType: 'DepositPreauth',

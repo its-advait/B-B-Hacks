@@ -1,4 +1,5 @@
 import type { ActorRole, PaymentObservation, RepairPlan } from '../../shared/contracts.js';
+import { repairConfigurationLabel } from '../policy/report.js';
 
 /** Subset of teammate A's TransactionResult. Extra ledger fields stay internal. */
 export interface LedgerReceipt {
@@ -83,7 +84,7 @@ export function projectPayment(actor: ActorRole, receipt: LedgerReceipt): Paymen
   };
 }
 
-export function projectStoredRepair(plan: StoredRepairPreview): RepairPlan {
+export function projectStoredRepair(plan: StoredRepairPreview, network: string): RepairPlan {
   if (plan.transaction.TransactionType !== 'DepositPreauth' || !plan.transaction.Account || !plan.transaction.Unauthorize) {
     throw new Error('Stored repair preview is not a DepositPreauth Unauthorize.');
   }
@@ -92,7 +93,7 @@ export function projectStoredRepair(plan: StoredRepairPreview): RepairPlan {
   }
   return {
     id: plan.id,
-    description: `Testnet configuration change: ${plan.summary}`,
+    description: `${repairConfigurationLabel(network)}: ${plan.summary}`,
     affectedAddress: plan.target,
     unsignedTransaction: {
       TransactionType: 'DepositPreauth',

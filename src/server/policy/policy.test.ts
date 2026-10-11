@@ -142,7 +142,18 @@ test('legacy direct approval produces one repair, and a non-authorization failur
     Account: 'rTreasury',
     Unauthorize: 'rLegacy',
   });
-  assert.match(report.repairPlan?.description ?? '', /Testnet configuration change/);
+  assert.match(report.repairPlan?.description ?? '', /^Devnet configuration change:/);
+  const altnet = buildReport({
+    phase: 'before',
+    snapshot: snapshot({ network: 'testnet' }),
+    policy,
+    observations: [
+      observation('validCustomer', 'allowed', 'tesSUCCESS'),
+      observation('legacyCustomer', 'allowed', 'tesSUCCESS'),
+      observation('stranger', 'blocked', 'tecNO_PERMISSION'),
+    ],
+  });
+  assert.match(altnet.repairPlan?.description ?? '', /^Testnet configuration change:/);
   assert.match(report.rows[1]?.explanation ?? '', /direct account preauthorization/);
 
   const inconclusive = buildReport({

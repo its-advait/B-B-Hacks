@@ -81,7 +81,8 @@ test('stored repair projection copies the preview and rejects a different transa
     target: 'rBob',
     stateFingerprint: 'fp-a',
     transaction: { TransactionType: 'DepositPreauth', Account: 'rCompany', Unauthorize: 'rBob' },
-  });
+  }, 'devnet');
+  assert.match(plan.description, /^Devnet configuration change:/);
   assert.equal(plan.id, 'plan-a');
   assert.equal(plan.snapshotFingerprint, 'fp-a');
   assert.equal(plan.unsignedTransaction.Unauthorize, 'rBob');
@@ -92,7 +93,7 @@ test('stored repair projection copies the preview and rejects a different transa
       target: 'rBob',
       stateFingerprint: 'fp',
       transaction: { TransactionType: 'Payment', Account: 'rCompany' },
-    }),
+    }, 'devnet'),
   );
 });
 

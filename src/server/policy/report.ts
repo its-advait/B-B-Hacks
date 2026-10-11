@@ -19,6 +19,17 @@ export const CHECK_ACTORS: readonly ActorRole[] = ['validCustomer', 'legacyCusto
 /** DepositAuth's validated rejection. Other tec/tem/ter codes are not permission evidence. */
 const AUTHORIZATION_DENIAL = 'tecNO_PERMISSION';
 
+/** Names the network the snapshot actually reported. Devnet must not be called Testnet. */
+export function repairConfigurationLabel(network: string): string {
+  if (network === 'devnet') {
+    return 'Devnet configuration change';
+  }
+  if (network === 'testnet') {
+    return 'Testnet configuration change';
+  }
+  return 'Test network configuration change';
+}
+
 function hasTransactionEvidence(observation: PaymentObservation): boolean {
   return typeof observation.transactionHash === 'string' && observation.transactionHash.length > 0 && typeof observation.resultCode === 'string' && observation.resultCode.length > 0;
 }
@@ -256,7 +267,7 @@ export function buildReport(input: {
         : '';
     const plan: RepairPlan = {
       id: input.planId ?? randomUUID(),
-      description: `Testnet configuration change: remove the direct DepositPreauth approval for ${affectedAddress}. Intended policy does not list this address as an exception. Credential rules and every other approval stay in place.${limit}`,
+      description: `${repairConfigurationLabel(snapshot.network)}: remove the direct DepositPreauth approval for ${affectedAddress}. Intended policy does not list this address as an exception. Credential rules and every other approval stay in place.${limit}`,
       affectedAddress,
       unsignedTransaction: {
         TransactionType: 'DepositPreauth',
