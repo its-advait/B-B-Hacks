@@ -1,0 +1,240 @@
+{
+  "scope": "Real Devnet/Testnet direct XRP payments; disposable test funds only",
+  "capturedAt": "2026-10-11T21:11:11.772Z",
+  "network": {
+    "url": "wss://s.devnet.rippletest.net:51233",
+    "network": "devnet",
+    "networkId": 2,
+    "ledgerIndex": 6044483,
+    "ledgerHash": "0CF41A365974E4879F076C87BAB3CD0658DF92AD1389D06AF832131BC9997EDF",
+    "amendments": {
+      "Credentials": true,
+      "DepositAuth": true,
+      "DepositPreauth": true
+    }
+  },
+  "accounts": {
+    "company": "rKMuvPYgtYuhgwSo6DEFrty2jzT6HDScAP",
+    "alice": "rMDqLFSNwXogy1gDR4u1o8KtHW9qGaiaUF",
+    "bob": "ranZkDk1q1fTWNPhVRbwrSDCJ7gjR5ahtV",
+    "charlie": "rLwRKmTQW2mjsiRjLVcGonTsM628T3Jnt1",
+    "issuer": "rDyChpEwF8to83xi1zEzNjqBRfUcHyMwBX"
+  },
+  "setup": {
+    "receipts": [
+      {
+        "transactionHash": "A5FFEB2BF690AF54E76710946911901B34D32983AE43CEE323FC48A2EFA7FDEE",
+        "validated": true,
+        "resultCode": "tesSUCCESS",
+        "successful": true,
+        "ledgerIndex": 6044493,
+        "sender": "rKMuvPYgtYuhgwSo6DEFrty2jzT6HDScAP",
+        "sequence": 6044485,
+        "lastLedgerSequence": 6044511
+      },
+      {
+        "transactionHash": "6139D086AA52460F77D52FF00C166713510292BD12B2CD78EB221B33B4EC774D",
+        "validated": true,
+        "resultCode": "tesSUCCESS",
+        "successful": true,
+        "ledgerIndex": 6044495,
+        "sender": "rDyChpEwF8to83xi1zEzNjqBRfUcHyMwBX",
+        "sequence": 6044491,
+        "lastLedgerSequence": 6044513
+      },
+      {
+        "transactionHash": "32180AF5167923D419A7F6815A78DA8B582AB551A06D62CFF5072E99C80B3029",
+        "validated": true,
+        "resultCode": "tesSUCCESS",
+        "successful": true,
+        "ledgerIndex": 6044497,
+        "sender": "rMDqLFSNwXogy1gDR4u1o8KtHW9qGaiaUF",
+        "sequence": 6044486,
+        "lastLedgerSequence": 6044515
+      },
+      {
+        "transactionHash": "B33E94E5549465063286D959B7FEEB89FF472AB3FEE64B00173AFD56D0EF760F",
+        "validated": true,
+        "resultCode": "tesSUCCESS",
+        "successful": true,
+        "ledgerIndex": 6044499,
+        "sender": "rDyChpEwF8to83xi1zEzNjqBRfUcHyMwBX",
+        "sequence": 6044492,
+        "lastLedgerSequence": 6044517
+      },
+      {
+        "transactionHash": "89BF0DA37FDE35738119FA72ECD00986F3FF82E494C9013C52BACD45A661FD98",
+        "validated": true,
+        "resultCode": "tesSUCCESS",
+        "successful": true,
+        "ledgerIndex": 6044501,
+        "sender": "ranZkDk1q1fTWNPhVRbwrSDCJ7gjR5ahtV",
+        "sequence": 6044488,
+        "lastLedgerSequence": 6044519
+      },
+      {
+        "transactionHash": "23B98D4410C5D140FE4FD64B7F58BE22EAAB3048510D421617389A88715B14B4",
+        "validated": true,
+        "resultCode": "tesSUCCESS",
+        "successful": true,
+        "ledgerIndex": 6044503,
+        "sender": "rKMuvPYgtYuhgwSo6DEFrty2jzT6HDScAP",
+        "sequence": 6044486,
+        "lastLedgerSequence": 6044521
+      },
+      {
+        "transactionHash": "9231D7D34720751C3D1208AD800206507A596632B80B9B248EDC5025E61B13C4",
+        "validated": true,
+        "resultCode": "tesSUCCESS",
+        "successful": true,
+        "ledgerIndex": 6044505,
+        "sender": "rKMuvPYgtYuhgwSo6DEFrty2jzT6HDScAP",
+        "sequence": 6044487,
+        "lastLedgerSequence": 6044523
+      },
+      {
+        "transactionHash": "9CAD317F047CA424411AAFCE9C3C1DB7F4E3E19133BCCC1ED3CD979462BA8A51",
+        "validated": true,
+        "resultCode": "tesSUCCESS",
+        "successful": true,
+        "ledgerIndex": 6044507,
+        "sender": "rDyChpEwF8to83xi1zEzNjqBRfUcHyMwBX",
+        "sequence": 6044493,
+        "lastLedgerSequence": 6044525
+      }
+    ],
+    "permissions": {
+      "account": "rKMuvPYgtYuhgwSo6DEFrty2jzT6HDScAP",
+      "ledgerIndex": 6044507,
+      "ledgerHash": "64D619D0E7B0C507AAC06523BD23E3E663B129D53947CDF4BFAD1920D1B6B686",
+      "flags": 16777216,
+      "depositAuth": true,
+      "balanceDrops": "99999997",
+      "baseReserveDrops": "1000000",
+      "directApprovals": [
+        {
+          "account": "ranZkDk1q1fTWNPhVRbwrSDCJ7gjR5ahtV",
+          "ledgerEntryId": "D1A2EAE40F3989C05FDF69FB3F06FE7205CF9C3BDC7E35D129A86CCEC91A7F58"
+        }
+      ],
+      "credentialApprovals": [
+        {
+          "ledgerEntryId": "8873F62126FC44AC1262D8BC7993111325315FBE68C9434278589C362F2A684D",
+          "credentials": [
+            {
+              "issuer": "rDyChpEwF8to83xi1zEzNjqBRfUcHyMwBX",
+              "credentialType": "67617465636865636B3A637573746F6D65723A7631"
+            }
+          ]
+        }
+      ],
+      "credentials": [
+        {
+          "subject": "rMDqLFSNwXogy1gDR4u1o8KtHW9qGaiaUF",
+          "issuer": "rDyChpEwF8to83xi1zEzNjqBRfUcHyMwBX",
+          "credentialType": "67617465636865636B3A637573746F6D65723A7631",
+          "id": "2514CCD3A00B43823ED4F3D3030C72C5BF75276B8B528E4C5C34C1A1118AA950",
+          "exists": true,
+          "accepted": true,
+          "expiration": null,
+          "expired": false
+        },
+        {
+          "subject": "ranZkDk1q1fTWNPhVRbwrSDCJ7gjR5ahtV",
+          "issuer": "rDyChpEwF8to83xi1zEzNjqBRfUcHyMwBX",
+          "credentialType": "67617465636865636B3A637573746F6D65723A7631",
+          "id": null,
+          "exists": false,
+          "accepted": false,
+          "expiration": null,
+          "expired": false
+        },
+        {
+          "subject": "rLwRKmTQW2mjsiRjLVcGonTsM628T3Jnt1",
+          "issuer": "rDyChpEwF8to83xi1zEzNjqBRfUcHyMwBX",
+          "credentialType": "67617465636865636B3A637573746F6D65723A7631",
+          "id": null,
+          "exists": false,
+          "accepted": false,
+          "expiration": null,
+          "expired": false
+        }
+      ],
+      "fingerprint": "cebbd69f5de63318ff30b2a0507bb7a2b0157bc24bda794355df3eb2553f3ad4",
+      "limitations": [
+        "Only direct incoming XRP Payment transactions are tested.",
+        "DepositAuth is not an outgoing spending control.",
+        "Low-balance reserve top-ups can bypass DepositAuth; demo requires receiver balance above reserve.",
+        "Checks, escrow, trading, lending, and other value-transfer paths are outside this suite.",
+        "Controlled test accounts are a reconstruction, not a production ledger fork."
+      ]
+    }
+  },
+  "before": [
+    {
+      "customer": "alice",
+      "expectedAllowed": true,
+      "credentialIds": [
+        "2514CCD3A00B43823ED4F3D3030C72C5BF75276B8B528E4C5C34C1A1118AA950"
+      ],
+      "receipt": {
+        "transactionHash": "A65C5EEF097804491FD0A8FDCD3D6708603E3B5E3F232FFCF2FC16ED680E05B6",
+        "validated": true,
+        "resultCode": "tesSUCCESS",
+        "successful": true,
+        "ledgerIndex": 6044510,
+        "sender": "rMDqLFSNwXogy1gDR4u1o8KtHW9qGaiaUF",
+        "sequence": 6044487,
+        "lastLedgerSequence": 6044528
+      },
+      "matchesPolicy": true
+    },
+    {
+      "customer": "bob",
+      "expectedAllowed": false,
+      "credentialIds": [],
+      "receipt": {
+        "transactionHash": "C3BA8C6C8EFD22D03E38A84719F7D7931B8E2FBFC2FB23EBD49BFAC7F41F7FEB",
+        "validated": true,
+        "resultCode": "tesSUCCESS",
+        "successful": true,
+        "ledgerIndex": 6044511,
+        "sender": "ranZkDk1q1fTWNPhVRbwrSDCJ7gjR5ahtV",
+        "sequence": 6044489,
+        "lastLedgerSequence": 6044530
+      },
+      "matchesPolicy": false
+    },
+    {
+      "customer": "charlie",
+      "expectedAllowed": false,
+      "credentialIds": [],
+      "receipt": {
+        "transactionHash": "96BFF3950B96F4E3C52E0D8F4C81AF57828B0D39BC2DA3687CB29D585E69F912",
+        "validated": true,
+        "resultCode": "tecNO_PERMISSION",
+        "successful": false,
+        "ledgerIndex": 6044513,
+        "sender": "rLwRKmTQW2mjsiRjLVcGonTsM628T3Jnt1",
+        "sequence": 6044490,
+        "lastLedgerSequence": 6044531
+      },
+      "matchesPolicy": true
+    }
+  ],
+  "plan": {
+    "id": "02628bb2-ca39-4179-8959-c42d5be60987",
+    "createdAt": "2026-10-11T21:11:11.770Z",
+    "expiresAt": "2026-10-11T21:26:11.771Z",
+    "networkUrl": "wss://s.devnet.rippletest.net:51233",
+    "company": "rKMuvPYgtYuhgwSo6DEFrty2jzT6HDScAP",
+    "target": "ranZkDk1q1fTWNPhVRbwrSDCJ7gjR5ahtV",
+    "stateFingerprint": "cebbd69f5de63318ff30b2a0507bb7a2b0157bc24bda794355df3eb2553f3ad4",
+    "transaction": {
+      "TransactionType": "DepositPreauth",
+      "Account": "rKMuvPYgtYuhgwSo6DEFrty2jzT6HDScAP",
+      "Unauthorize": "ranZkDk1q1fTWNPhVRbwrSDCJ7gjR5ahtV"
+    },
+    "summary": "Remove only this direct wallet approval. Credential-based approvals and every other wallet approval remain unchanged."
+  }
+}
