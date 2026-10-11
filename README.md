@@ -72,15 +72,17 @@ Previous recording, on the frontend commit `a9edce1`, before this API update. Se
 
 That recording used the API integrated before commits `9bb5d8e` and `e791428`. Its repair description said "Testnet configuration change" even though the snapshot network was Devnet.
 
-Updated API, isolated from that recording, on this release branch. One new Devnet environment and one before suite, session `736157e0-d11b-4fcc-a2b9-0fc91b82e236`:
+Updated API, isolated from that recording, on this release branch. One Devnet environment, one before suite, one approved repair, and one after suite. Session `736157e0-d11b-4fcc-a2b9-0fc91b82e236`. The page label was "Devnet / fake funds".
 
-- Setup reached ready on Devnet. The page label was "Devnet / fake funds".
-- Before report `b139709a-8c46-4ba9-9fcb-b9563de8db12`: valid customer matched (`tesSUCCESS`, `AF86958DD0515EEA69CCEC7CD0F646A112726A22117040D77AFBF249D13FF537`); legacy customer mismatched (`tesSUCCESS`, `CA0F4F11E231315365AB640BB3F9CDBB90B96882A8A4A9FCBA2395A1046F0DB1`); stranger matched (`tecNO_PERMISSION`, `5323667B86F39FCC78F7B1B9385E2AA34ABFB594F388236FC8358306662AA320`).
-- The stored plan says "Devnet configuration change" and has not been submitted. After checks on this API version have not been run.
+- Before report `b139709a-8c46-4ba9-9fcb-b9563de8db12` remains stored: valid customer matched (`tesSUCCESS`, `AF86958DD0515EEA69CCEC7CD0F646A112726A22117040D77AFBF249D13FF537`); legacy customer mismatched (`tesSUCCESS`, `CA0F4F11E231315365AB640BB3F9CDBB90B96882A8A4A9FCBA2395A1046F0DB1`); stranger matched (`tecNO_PERMISSION`, `5323667B86F39FCC78F7B1B9385E2AA34ABFB594F388236FC8358306662AA320`).
+- Approved plan `e2eeb14c-34f2-4db9-bede-ad3f4e0bef68` was submitted once. The description says "Devnet configuration change". Receipt validated `tesSUCCESS`, hash `628148097BBDD345D7083E6C43D1E8166980708E7924FE1B9C516742DE3B7749`. The session returned to ready.
+- After report `600b8a11-d802-4aa6-ac86-17a75b8a80a7`: valid customer matched (`tesSUCCESS`, `3EE4EEC045E3C1F0E4BBEAC1E41E27AD816DEC75F2509EC0361112984A845E13`); legacy customer matched (`tecNO_PERMISSION`, `DCCDDD4B5B718F9C2C2D08BE5DB28636BAC799EFB489AFEF20AE817E3E58D2DE`); stranger matched (`tecNO_PERMISSION`, `F5F824D23E09D656FF4E35D44D46D92ED757EB2711392D743081C60A3B1DC17D`). No mismatch.
 
-Automated checks on this branch: `npm ci`, the API and policy suite (30 tests), `npm run typecheck`, and `npm run build`.
+Automated checks on this branch: `npm ci`, the API and policy suite (30 tests), `npm run typecheck`, and `npm run build`. The browser title is `GateCheck`.
 
 ## Submission placeholders
+
+These lines are placeholders until the links are supplied. They are not live URLs.
 
 - YouTube: `YOUTUBE_URL`
 - Optional evidence site: `EVIDENCE_SITE_URL`
