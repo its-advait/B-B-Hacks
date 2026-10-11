@@ -10,43 +10,25 @@ B edits `src/server/api/**`, `src/server/policy/**`, and `src/server/index.ts`.
 
 A owns `src/server/ledger/**`. The integration lead owns `src/client/**`, `src/shared/contracts.ts`, `package.json`, lockfiles, root config, and `README.md`.
 
-## Agreed ledger import
+## Ledger adapter
 
-B loads `src/server/ledger/index.ts` at runtime (`../ledger/index.js` from the API). The live server calls only these exports:
+B loads `src/server/ledger/index.ts` at runtime and calls A's actual exports:
 
-```ts
-createDemoEnvironment(onProgress): Promise<LedgerSession>
-readSnapshot(session): Promise<AccountSnapshot>
-sendTestPayment(session, actor): Promise<PaymentObservation>
-removeIndividualApproval(session, address): Promise<{ transactionHash, resultCode, validated: true }>
-```
+`connectLedger`, `createTestAccounts`, `setupPermissions`, `readPermissions`, `readCredential`, `testPayment`, `customerRefs`, `CUSTOMER_TYPE`, `previewRemoveDirectApproval`, `removeDirectApproval`.
 
-`LedgerSession` stays inside the API process and is never JSON-encoded. If the module or any of those functions is missing, jobs fail with an unavailable error. They are not replaced with a successful fixture.
+Role addresses are `alice` → `validCustomer`, `bob` → `legacyCustomer`, `charlie` → `stranger`, `company` → treasury, `issuer` → issuer. Outcomes are not chosen from those names.
 
-## What A's branch actually exports
+`readCredential({ subject, issuer: snapshot.issuerAddress, credentialType: snapshot.credentialType })` maps to `valid` only when `exists && accepted && !expired && id`. A thrown read is inconclusive. A missing credential is `none` unless this session's `setupPermissions` call validated Bob's credential delete; that is the lifecycle evidence for `revoked`.
 
-`teammate-a-ledger:src/server/ledger/index.ts` exports `connectLedger`, `disconnectLedger`, `createTestAccounts`, `setupPermissions`, `readPermissions`, `issueCredential`, `acceptCredential`, `revokeCredential`, `readCredential`, `testPayment`, `runPaymentSuite`, `previewRemoveDirectApproval`, and `removeDirectApproval`. Those names are not wired. A's suggested routes (`/api/setup`, `/api/permissions`, `/api/tests`, `/api/repair/preview`, `/api/repair/approve`) are not the frozen API.
+Legacy and stranger payments call `testPayment(address, treasury, [])` directly. The generic payment suite is not used. Receipts keep `validated`, `resultCode`, `transactionHash`, `ledgerIndex`, `sender`, `sequence`, and `lastLedgerSequence` on the private session. Public rows receive only the shared observation fields. `resultCode === 'INCONCLUSIVE'` or `successful === null` stays inconclusive, including when a hash is already known.
 
-Roles on that branch are `company`, `issuer`, `alice`, `bob`, and `charlie`, not `validCustomer`, `legacyCustomer`, and `stranger`. Repair there stores its own plan and requires `removeDirectApproval(planId, { approved, planId, approvedBy })`.
+Repair preview and submission go through A's stored plans. The public plan id and fingerprint are A's. Approval is `removeDirectApproval(planId, { approved: true, planId, approvedBy: 'gatecheck-operator' })`. B does not write a second plan file and does not submit its own `DepositPreauth`. Client transaction JSON is ignored.
 
-## Contract gap that needs A's confirmation
+A's module is process-global. This API branch does not copy `src/server/ledger/**` or add `xrpl`. When that directory is absent, jobs fail closed.
 
-`Actor.credentialStatus` has no per-actor issuer, type, acceptance, or expiry. B treats `valid` as a current accepted credential from `AccountSnapshot.issuerAddress` and `AccountSnapshot.credentialType`. `revoked` and `none` are not allowed unless the address is in `IntendedPolicy.individualExceptions`.
+## Contract gap
 
-A's current `CredentialState` can express issuer, type, accepted, and expiry, but a missing credential object cannot by itself prove revocation. A's demo deletes Bob's credential. B will not relabel that as `revoked` or `valid` from the role name.
-
-If A cannot make the `valid` guarantee, the lead needs to extend `Actor` in `src/shared/contracts.ts` with:
-
-```ts
-credentialIssuer: string | null;
-credentialType: string | null;
-credentialAccepted: boolean;
-credentialExpired: boolean;
-```
-
-B has not added those fields. Expected outcomes would then have to be re-checked against them.
-
-Direct ledger approvals stay out of intended policy. The demo policy is the snapshot issuer and type plus `individualExceptions: []`.
+The shared `Actor` still has no per-actor issuer, type, acceptance, or expiry. The adapter applies those checks before setting `credentialStatus`. No shared-contract edit was required for this mapping. Direct ledger approvals stay out of `individualExceptions`.
 
 ## API that is implemented
 
@@ -58,7 +40,7 @@ Direct ledger approvals stay out of intended policy. The demo policy is the snap
 | `POST /api/sessions/:id/checks` | Requires `phase` `before` or `after` and `approveTestPayments: true`. |
 | `POST /api/sessions/:id/repair` | Requires stored `planId` and `approved: true`. Client transaction JSON is ignored. |
 
-Missing approval is 400. Unknown session is 404. A busy session, bad phase, or stale plan is 409. After-checks require a validated `tesSUCCESS` repair receipt. Fingerprints cover DepositAuth, direct preauthorizations, issuer, credential type, credential status, network, and intended-policy outcome fields. They omit ledger index, snapshot time, balances, sequence, and fees. Only validated `tecNO_PERMISSION` counts as blocked. Other failures stay inconclusive. One uncertain repair is not resubmitted.
+Missing approval is 400. Unknown session is 404. A busy session, bad phase, or a repair A's module rejects as stale is 409. After-checks require a validated `tesSUCCESS` repair receipt. The published repair fingerprint is A's permission-state fingerprint. Only validated `tecNO_PERMISSION` counts as blocked. `INCONCLUSIVE` and other non-authorization codes stay inconclusive. One uncertain repair is not resubmitted.
 
 ## Scripts
 
@@ -67,16 +49,16 @@ Root scripts, unchanged: `npm run dev`, `npm run dev:server`, `npm run dev:clien
 B tests, with no root script because `package.json` is lead-owned:
 
 ```bash
-npx tsx --test src/server/policy/policy.test.ts src/server/api/api.test.ts
+npx tsx --test src/server/policy/policy.test.ts src/server/api/aLedger.test.ts src/server/api/api.test.ts
 ```
 
 ## Lead coordination
 
-- Add `"test": "tsx --test src/server/policy/policy.test.ts src/server/api/api.test.ts"` if the team wants one command.
+- Add `"test": "tsx --test src/server/policy/policy.test.ts src/server/api/aLedger.test.ts src/server/api/api.test.ts"` if the team wants one command.
 - Do not merge `teammate-a-ledger` into `main` as-is. It has a different history, package, and contract.
 - When A's module is integrated, add A's runtime dependency (`xrpl`, currently 5.3.0 on that branch) in the root package. B does not import it.
 - Root engines say Node `>=20`. A's branch says Node `>=22`. This checkout used Node 22.
 
 ## Checks run here
 
-Policy and API tests use an in-memory adapter. They do not submit XRPL transactions. Live setup stays unavailable until A exports the four agreed functions from `src/server/ledger/index.ts`.
+Policy and adapter tests use an in-memory stand-in for A's exports. They do not submit XRPL transactions. Live setup stays unavailable until `src/server/ledger/index.ts` from `teammate-a-ledger` is present in the same tree and the lead has installed `xrpl`.

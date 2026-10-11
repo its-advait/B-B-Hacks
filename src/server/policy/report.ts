@@ -65,6 +65,7 @@ function explain(input: {
   snapshot: AccountSnapshot;
   observation: PaymentObservation;
   repaired: boolean;
+  repairDeferred: boolean;
 }): string {
   const { actor, expected, observed, policy, snapshot, observation, repaired } = input;
   const address = actor?.address ?? observation.actor;
@@ -98,9 +99,11 @@ function explain(input: {
       return `Intended policy blocks ${address} (credential status ${actor.credentialStatus}), but the validated payment succeeded.${code} Deposit Authorization is not enabled.${approvalNote} No repair is proposed.`;
     }
     if (actor.individuallyApproved) {
-      const repair = repaired
-        ? ' The repair removes only this direct approval.'
-        : ' Another conflicting approval is repaired first; rerun checks for this one.';
+      const repair = input.repairDeferred
+        ? ' A ledger repair preview was not stored, so no transaction was submitted.'
+        : repaired
+          ? ' The repair removes only this direct approval.'
+          : ' Another conflicting approval is repaired first; rerun checks for this one.';
       return `Intended policy blocks ${address} (credential status ${actor.credentialStatus}; not an intended exception), but the validated payment succeeded.${code} The snapshot shows a direct account preauthorization. That approval is ledger state, not an intended exception.${repair}`;
     }
     return `Intended policy blocks ${address} (credential status ${actor.credentialStatus}), but the validated payment succeeded.${code} The snapshot does not show a direct account preauthorization for this address, so no single-approval repair is proposed.`;
@@ -116,6 +119,7 @@ export function buildReport(input: {
   observations: PaymentObservation[];
   completedAt?: string;
   planId?: string;
+  includeRepair?: boolean;
 }): Report {
   const snapshot = structuredClone(input.snapshot);
   const policy = structuredClone(input.policy);
@@ -166,7 +170,8 @@ export function buildReport(input: {
         policy,
         snapshot,
         observation: item.observation,
-        repaired: index === repairIndex,
+        repaired: index === repairIndex && input.includeRepair !== false,
+        repairDeferred: index === repairIndex && input.includeRepair === false,
       }),
     };
     if (item.observation.transactionHash) {
@@ -190,7 +195,7 @@ export function buildReport(input: {
     completedAt: input.completedAt ?? new Date().toISOString(),
   };
 
-  const repairTarget = repairIndex >= 0 ? draft[repairIndex] : undefined;
+  const repairTarget = input.includeRepair === false ? undefined : repairIndex >= 0 ? draft[repairIndex] : undefined;
   if (repairTarget?.actor) {
     const affectedAddress = repairTarget.actor.address;
     const plan: RepairPlan = {

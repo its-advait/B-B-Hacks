@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import test from 'node:test';
-import type { AccountSnapshot, ActorRole, PaymentObservation, PublicSession } from '../../shared/contracts.js';
+import type { AccountSnapshot, ActorRole, PaymentObservation, PublicSession, RepairPlan } from '../../shared/contracts.js';
 import { createApp } from './createApp.js';
 import { loadLedgerPort } from './ledgerAdapter.js';
 import { LedgerUnavailableError, type LedgerPort } from './ledgerPort.js';
@@ -16,6 +17,7 @@ class ScriptedLedger implements LedgerPort {
   paymentOrder: ActorRole[] = [];
   failRepair = false;
   repairCalls = 0;
+  private plans = new Map<string, { address: string; consumed: boolean }>();
   private gate: Promise<void> | null = null;
   private releaseGate: (() => void) | null = null;
 
@@ -50,20 +52,49 @@ class ScriptedLedger implements LedgerPort {
     return structuredClone(payment);
   }
 
-  async removeIndividualApproval(_session: unknown, address: string): Promise<{
+  async previewDirectApprovalRepair(_session: unknown, address: string): Promise<RepairPlan> {
+    const actor = this.snapshot.actors.find((item) => item.address === address);
+    if (!this.snapshot.depositAuthEnabled || !actor?.individuallyApproved) {
+      throw new Error('No direct wallet approval to remove');
+    }
+    const id = randomUUID();
+    this.plans.set(id, { address, consumed: false });
+    return {
+      id,
+      description: 'Testnet configuration change: stored ledger preview',
+      affectedAddress: address,
+      unsignedTransaction: {
+        TransactionType: 'DepositPreauth',
+        Account: this.snapshot.treasuryAddress,
+        Unauthorize: address,
+      },
+      snapshotFingerprint: 'ledger-permission-fingerprint',
+    };
+  }
+
+  async executeStoredRepair(_session: unknown, planId: string): Promise<{
     transactionHash: string;
     resultCode: string;
     validated: true;
   }> {
+    const plan = this.plans.get(planId);
+    if (!plan) {
+      throw new Error('Invalid plan ID');
+    }
+    if (plan.consumed) {
+      throw new Error('Plan already submitted; reconcile its journal receipt, do not reapply');
+    }
+    const actor = this.snapshot.actors.find((item) => item.address === plan.address);
+    if (!this.snapshot.depositAuthEnabled || !actor?.individuallyApproved) {
+      throw new Error('Authorization state changed; preview and approve a fresh plan');
+    }
     this.repairCalls += 1;
-    this.removed.push(address);
+    plan.consumed = true;
     if (this.failRepair) {
       throw new Error('socket timeout after submission seed sEdVL7h30dK1mN2pQ3rS');
     }
-    const target = this.snapshot.actors.find((item) => item.address === address);
-    if (target) {
-      target.individuallyApproved = false;
-    }
+    this.removed.push(plan.address);
+    actor.individuallyApproved = false;
     this.payments.legacyCustomer = {
       actor: 'legacyCustomer',
       observed: 'blocked',
@@ -260,6 +291,7 @@ test('cancel sends no repair, stale plans are rejected, and the reviewed flow ke
     const plan = before.reports[0]?.repairPlan;
     assert.ok(plan);
     assert.equal(before.reports[0]?.rows[1]?.verdict, 'mismatch');
+    assert.equal(plan.snapshotFingerprint, 'ledger-permission-fingerprint');
     assert.equal(before.reports[0]?.rows[1]?.transactionHash, 'HASH_legacy');
 
     const canceled = await request(base, 'POST', `/api/sessions/${sessionId}/repair`, {

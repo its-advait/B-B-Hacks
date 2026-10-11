@@ -4,7 +4,7 @@ import { ApiError } from './errors.js';
 import type { LedgerPort } from './ledgerPort.js';
 import { redactError, redactSecrets } from './redact.js';
 import { deriveIntendedPolicy } from '../policy/evaluate.js';
-import { repairStaleReason } from '../policy/fingerprint.js';
+import { isStaleRepairError } from './ledgerMap.js';
 import { buildReport, CHECK_ACTORS } from '../policy/report.js';
 
 interface PrivateSession {
@@ -152,7 +152,18 @@ export function createSessionService(resolveLedger: () => Promise<LedgerPort>): 
         }
       }
 
-      const report = buildReport({ phase, snapshot, policy, observations });
+      let report = buildReport({ phase, snapshot, policy, observations });
+      if (report.repairPlan) {
+        const affectedAddress = report.repairPlan.affectedAddress;
+        session.public.progress = `Storing repair preview for ${affectedAddress}`;
+        try {
+          const stored = await port.previewDirectApprovalRepair(session.ledger, affectedAddress);
+          report = { ...report, repairPlan: stored };
+        } catch (error) {
+          report = buildReport({ phase, snapshot, policy, observations, includeRepair: false });
+          session.public.progress = `Repair preview was not stored: ${redactError(error)}`;
+        }
+      }
       session.public.snapshot = structuredClone(snapshot);
       session.public.network = snapshot.network;
       session.public.reports = [...session.public.reports, report];
@@ -193,108 +204,42 @@ export function createSessionService(resolveLedger: () => Promise<LedgerPort>): 
 
     const plan = session.activePlan;
     session.busy = true;
+    session.public.status = 'repairing';
+    session.public.error = undefined;
+    session.public.progress = `Submitting reviewed DepositPreauth Unauthorize for ${plan.affectedAddress}`;
     try {
       const port = await resolveLedger();
-      const fresh = await port.readSnapshot(session.ledger);
-      const stale = repairStaleReason(plan, fresh, session.policy);
-      if (stale) {
-        session.consumedPlanIds.add(plan.id);
-        session.activePlan = null;
-        session.public.snapshot = structuredClone(fresh);
-        session.public.progress = stale;
-        throw new ApiError(409, 'stale_plan', stale);
-      }
-
-      session.public.status = 'repairing';
-      session.public.error = undefined;
-      session.public.progress = `Submitting reviewed DepositPreauth Unauthorize for ${plan.affectedAddress}`;
-      void runRepair(session, plan);
-      return { sessionId: id };
-    } catch (error) {
-      session.busy = false;
-      if (session.public.status === 'repairing') {
-        session.public.status = 'ready';
-      }
-      throw error;
-    }
-  }
-
-  async function runRepair(session: PrivateSession, plan: RepairPlan): Promise<void> {
-    try {
-      const port = await resolveLedger();
-      const policy = session.policy;
-      if (!policy || !session.ledger) {
-        throw new ApiError(409, 'invalid_phase', 'The test environment is not ready.');
-      }
-
-      const fresh = await port.readSnapshot(session.ledger);
-      const stale = repairStaleReason(plan, fresh, policy);
-      if (stale) {
-        session.consumedPlanIds.add(plan.id);
-        session.activePlan = null;
-        session.public.snapshot = structuredClone(fresh);
-        session.public.status = 'error';
-        session.public.error = stale;
-        session.public.progress = 'Repair rejected because authorization state changed. Rerun checks.';
-        return;
-      }
-
-      const actor = fresh.actors.find((item) => item.address === plan.affectedAddress);
-      if (!actor?.individuallyApproved) {
-        session.consumedPlanIds.add(plan.id);
-        session.activePlan = null;
-        session.public.status = 'error';
-        session.public.error = 'The reviewed direct approval is no longer present. Rerun checks.';
-        session.public.progress = 'Repair rejected';
-        return;
-      }
-
-      let receipt: { transactionHash: string; resultCode: string; validated: true };
-      try {
-        receipt = await port.removeIndividualApproval(session.ledger, plan.affectedAddress);
-      } catch (error) {
-        session.consumedPlanIds.add(plan.id);
-        session.activePlan = null;
-        session.public.status = 'error';
-        session.public.error = `Repair outcome is unknown or failed (${redactError(error)}). This plan will not be resubmitted. Rerun checks.`;
-        session.public.progress = 'Repair failed';
-        return;
-      }
-
+      const receipt = await port.executeStoredRepair(session.ledger, plan.id);
       session.consumedPlanIds.add(plan.id);
       session.activePlan = null;
-      if (receipt.validated !== true || receipt.resultCode !== 'tesSUCCESS' || !receipt.transactionHash) {
-        session.public.status = 'error';
-        session.public.error = `Repair did not validate as tesSUCCESS (${receipt.resultCode || 'unknown'}). This plan will not be resubmitted. Rerun checks.`;
-        session.public.progress = 'Repair was not validated';
-        return;
-      }
-
-      session.public.repairReceipt = {
-        transactionHash: receipt.transactionHash,
-        resultCode: receipt.resultCode,
-        validated: true,
-      };
+      session.public.repairReceipt = receipt;
       try {
         const after = await port.readSnapshot(session.ledger);
         session.public.snapshot = structuredClone(after);
         session.public.network = after.network;
       } catch (error) {
-        session.public.progress = `Repair validated. Snapshot refresh failed: ${redactError(error)}`;
         session.public.status = 'ready';
         session.public.error = undefined;
-        return;
+        session.public.progress = `Repair validated. Snapshot refresh failed: ${redactError(error)}`;
+        return { sessionId: id };
       }
-
       session.public.error = undefined;
       session.public.status = 'ready';
       session.public.progress = `Repair validated for ${plan.affectedAddress}.`;
+      return { sessionId: id };
     } catch (error) {
       session.consumedPlanIds.add(plan.id);
       session.activePlan = null;
+      if (isStaleRepairError(error)) {
+        session.public.status = 'ready';
+        session.public.error = undefined;
+        session.public.progress = redactError(error);
+        throw new ApiError(409, 'stale_plan', redactError(error));
+      }
       session.public.status = 'error';
-      session.public.error = redactError(error);
+      session.public.error = `Repair outcome is unknown or failed (${redactError(error)}). This plan will not be resubmitted. Rerun checks.`;
       session.public.progress = 'Repair failed';
+      return { sessionId: id };
     } finally {
       session.busy = false;
     }
