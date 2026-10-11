@@ -94,5 +94,17 @@ Live run on 2026-10-11 against validated Devnet:
 - Raw capture: [evidence/compatibility-before.json](evidence/compatibility-before.json).
 - `npm run check` (strict `tsc --noEmit`) and `npm test` (11 tests) pass.
 
+## Precise guarantee for B (contract note)
+
+- `credentialStatus: 'valid'` means: the credential is **accepted**, **unexpired**, **belongs to the actor** (`subject` = actor address), and is **issued by `snapshot.issuerAddress`** for **`snapshot.credentialType`**. Any other state is never reported as `valid`.
+- Every payment returns the **actual validated result code and transaction hash**. `legacyCustomer` and `stranger` payments **always omit CredentialIDs**.
+- **RPC failures and timeouts stay `inconclusive`**; they are never reported as blocked.
+- B fingerprints supported permission state, preserves before/after reports, and removes **only** a stored, reviewed direct approval through `removeIndividualApproval`.
+- **Scope (stated honestly):** the shared snapshot supports one issuer and one credential type and the three test actors. It cannot represent arbitrary issuers/types or every ledger permission. Direct incoming XRP Payments only; DepositAuth is not an outgoing spending limit.
+
+## Smoke runner
+
+`npm run smoke -- --approve` runs setup → three before payments → one reviewed repair → three after payments on Devnet, and prints redacted output. Without `--approve` it only runs setup and the before checks; it never submits the repair.
+
 Historical end-to-end evidence — including the approved Bob-only Unauthorize repair and the
 after-repair suite — is in [evidence/live-demo.json](evidence/live-demo.json).

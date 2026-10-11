@@ -1,0 +1,106 @@
+{
+  "approvedRepair": true,
+  "startedAt": "2026-10-11T22:09:21.329Z",
+  "before": {
+    "stage": "before",
+    "ledgerIndex": 6045552,
+    "depositAuthEnabled": true,
+    "actors": [
+      {
+        "role": "validCustomer",
+        "address": "rMDqLFSNwXogy1gDR4u1o8KtHW9qGaiaUF",
+        "credentialStatus": "valid",
+        "individuallyApproved": false
+      },
+      {
+        "role": "legacyCustomer",
+        "address": "ranZkDk1q1fTWNPhVRbwrSDCJ7gjR5ahtV",
+        "credentialStatus": "revoked",
+        "individuallyApproved": true
+      },
+      {
+        "role": "stranger",
+        "address": "rLwRKmTQW2mjsiRjLVcGonTsM628T3Jnt1",
+        "credentialStatus": "none",
+        "individuallyApproved": false
+      }
+    ],
+    "payments": [
+      {
+        "actor": "validCustomer",
+        "observed": "allowed",
+        "validated": true,
+        "resultCode": "tesSUCCESS",
+        "transactionHash": "DF4101757707800AE70F3BB55CFC018C537A1F6983BE13FCC2170B41EEB2BD17"
+      },
+      {
+        "actor": "legacyCustomer",
+        "observed": "allowed",
+        "validated": true,
+        "resultCode": "tesSUCCESS",
+        "transactionHash": "46B7EC80FD089117BF18358A0282C1C6FCE1885197C84D722D7A5FFF5D7E5D32"
+      },
+      {
+        "actor": "stranger",
+        "observed": "blocked",
+        "validated": true,
+        "resultCode": "tecNO_PERMISSION",
+        "transactionHash": "C7EDB2CC424AB9A587A7971BCE74337A1754233119018CBBBADA308CC4AE0AD5"
+      }
+    ]
+  },
+  "repair": {
+    "transactionHash": "95E918F97E7CE9FC958AD8261A7F3C3AC003F435184BB082E129FBBC84972152",
+    "resultCode": "tesSUCCESS",
+    "validated": true
+  },
+  "after": {
+    "stage": "after",
+    "ledgerIndex": 6045561,
+    "depositAuthEnabled": true,
+    "actors": [
+      {
+        "role": "validCustomer",
+        "address": "rMDqLFSNwXogy1gDR4u1o8KtHW9qGaiaUF",
+        "credentialStatus": "valid",
+        "individuallyApproved": false
+      },
+      {
+        "role": "legacyCustomer",
+        "address": "ranZkDk1q1fTWNPhVRbwrSDCJ7gjR5ahtV",
+        "credentialStatus": "revoked",
+        "individuallyApproved": false
+      },
+      {
+        "role": "stranger",
+        "address": "rLwRKmTQW2mjsiRjLVcGonTsM628T3Jnt1",
+        "credentialStatus": "none",
+        "individuallyApproved": false
+      }
+    ],
+    "payments": [
+      {
+        "actor": "validCustomer",
+        "observed": "allowed",
+        "validated": true,
+        "resultCode": "tesSUCCESS",
+        "transactionHash": "6B6EA67FE2CFD082A3527B94AC14B11AD9AECC864EB9FC86811C24E71DA798F4"
+      },
+      {
+        "actor": "legacyCustomer",
+        "observed": "blocked",
+        "validated": true,
+        "resultCode": "tecNO_PERMISSION",
+        "transactionHash": "0899C358D32BFD9979A64970DF64823637FDB5558F1ED6BBC33F32D9B23B18B5"
+      },
+      {
+        "actor": "stranger",
+        "observed": "blocked",
+        "validated": true,
+        "resultCode": "tecNO_PERMISSION",
+        "transactionHash": "8D01D218AE54C8B78A561C4F1A63A8ABDCC4C84466BD590E50E8CA2F0888D70C"
+      }
+    ]
+  },
+  "finishedAt": "2026-10-11T22:10:41.829Z"
+}
