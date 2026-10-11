@@ -6,8 +6,8 @@ import type { AccountSnapshot, ActorRole, PaymentObservation, PublicSession, Rep
 import { deriveIntendedPolicy } from '../policy/evaluate.js';
 import { authorizationFingerprint } from '../policy/fingerprint.js';
 import { createApp } from './createApp.js';
-import { loadLedgerPort } from './ledgerAdapter.js';
-import { LedgerUnavailableError, type LedgerPort } from './ledgerPort.js';
+import { portFromLedgerModule } from './ledgerAdapter.js';
+import { LedgerUnavailableError, unavailableLedgerPort, type LedgerPort } from './ledgerPort.js';
 import { redactSecrets } from './redact.js';
 
 /**
@@ -229,7 +229,16 @@ test('missing approval, unknown session, and unavailable ledger do not fake a jo
     assert.equal(unknownRepair.status, 404);
   });
 
-  const unavailable = await loadLedgerPort();
+  let unavailableReason = '';
+  assert.throws(
+    () => portFromLedgerModule({}),
+    (error: unknown) => {
+      assert.ok(error instanceof LedgerUnavailableError);
+      unavailableReason = error.message;
+      return true;
+    },
+  );
+  const unavailable = unavailableLedgerPort(unavailableReason);
   await assert.rejects(() => unavailable.createDemoEnvironment(() => undefined), LedgerUnavailableError);
   await withServer(unavailable, async (base) => {
     const created = await request(base, 'POST', '/api/sessions', { approveTestnetSetup: true });
