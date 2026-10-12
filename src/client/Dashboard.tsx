@@ -146,15 +146,20 @@ export function Dashboard({
   onSubmitRepair,
 }: DashboardProps) {
   const [phase, setPhase] = useState<Phase>('before');
+  const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
   const [setupApproved, setSetupApproved] = useState(false);
   const [checksApproved, setChecksApproved] = useState(false);
   const [repairApproved, setRepairApproved] = useState(false);
   const [actionNote, setActionNote] = useState<string | null>(null);
 
   const reports = session?.reports ?? [];
-  const selected = [...reports].reverse().find((report) => report.phase === phase) ?? null;
-  const beforeReport = [...reports].reverse().find((report) => report.phase === 'before');
-  const afterReport = [...reports].reverse().find((report) => report.phase === 'after');
+  const phaseReports = reports.filter((report) => report.phase === phase);
+  const preferredReport = phaseReports.find((report) => report.repairPlan) ?? phaseReports[0] ?? null;
+  const selected = phaseReports.find((report) => report.id === selectedReportId) ?? preferredReport;
+  const beforeReport =
+    reports.find((report) => report.phase === 'before' && report.repairPlan) ??
+    reports.find((report) => report.phase === 'before');
+  const afterReport = reports.find((report) => report.phase === 'after');
   const plan = selected?.repairPlan ?? beforeReport?.repairPlan;
   const snapshot = session?.snapshot;
   const policy =
@@ -217,15 +222,10 @@ export function Dashboard({
 
   useEffect(() => {
     setPhase('before');
+    setSelectedReportId(null);
     setActionNote(null);
     setRepairApproved(false);
   }, [session?.id]);
-
-  useEffect(() => {
-    if (afterReport?.id) {
-      setPhase('after');
-    }
-  }, [afterReport?.id]);
 
   function previewOnly(action: string) {
     setActionNote(`${action} was not sent. This development fixture does not call the session API.`);
@@ -432,7 +432,15 @@ export function Dashboard({
       <section aria-labelledby="checks-heading">
         <h2 id="checks-heading">Checks</h2>
         <div className="tabs" role="tablist" aria-label="Report phase">
-          <button type="button" role="tab" aria-selected={phase === 'before'} onClick={() => setPhase('before')}>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={phase === 'before'}
+            onClick={() => {
+              setPhase('before');
+              setSelectedReportId(null);
+            }}
+          >
             Before
           </button>
           <button
@@ -440,11 +448,30 @@ export function Dashboard({
             role="tab"
             aria-selected={phase === 'after'}
             disabled={!afterReport}
-            onClick={() => setPhase('after')}
+            onClick={() => {
+              setPhase('after');
+              setSelectedReportId(null);
+            }}
           >
             After
           </button>
         </div>
+        {phaseReports.length > 1 ? (
+          <label className="scenario">
+            Report history
+            <select
+              value={selected?.id ?? ''}
+              onChange={(event) => setSelectedReportId(event.target.value)}
+            >
+              {phaseReports.map((report) => (
+                <option key={report.id} value={report.id}>
+                  {report.completedAt} · {report.id}
+                  {report.repairPlan ? ' · includes repair plan' : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         <label className="check" htmlFor="approve-checks">
           <input
             id="approve-checks"

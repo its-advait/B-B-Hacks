@@ -67,7 +67,8 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    const stored = sessionStorage.getItem(SESSION_KEY);
+    const requested = new URLSearchParams(window.location.search).get('session')?.trim() ?? '';
+    const stored = requested.length > 0 ? requested : sessionStorage.getItem(SESSION_KEY);
     if (!stored) {
       return;
     }
@@ -75,6 +76,7 @@ export function App() {
     void getSession(stored, controller.signal)
       .then((loaded) => {
         if (!controller.signal.aborted) {
+          sessionStorage.setItem(SESSION_KEY, loaded.id);
           setSessionUnavailable(false);
           setLiveSession(loaded);
         }
